@@ -2,6 +2,8 @@
 
 Personal fantasy and betting research dashboard built on free public data.
 
+**[▶ Open the live dashboard](https://msherrick.github.io/Personal-Projects/gridiron-desk/)** (updated every Tuesday and Saturday)
+
 ## Refresh the dashboard (this is all you need each week)
 One-time setup:
 

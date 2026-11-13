@@ -4,7 +4,7 @@ A collection of things I'm building.
 
 ## Gridiron Desk: NFL fantasy research dashboard
 
-**[Open the live dashboard](Sports%20Data%20Page/nfl-app/dist/dashboard.html)** · [Project details and setup](Sports%20Data%20Page/nfl-app/README.md)
+**[▶ Open the live dashboard](https://msherrick.github.io/Personal-Projects/gridiron-desk/)** · [Project details and setup](Sports%20Data%20Page/nfl-app/README.md) · [Code](Sports%20Data%20Page/nfl-app)
 
 A fantasy football "guru" page built entirely on free public data, rebuilt twice a week.
 
