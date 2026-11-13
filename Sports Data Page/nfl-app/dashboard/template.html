@@ -249,6 +249,13 @@ table.box .gs, table.box th.grp { border-left: 1px solid var(--line); }
 .dvpwrap thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 table.heat td b { font-weight: 600; }
 table.heat .rk { font-size: 11px; color: var(--muted); margin-left: 4px; }
+.sorth { all: unset; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; border-radius: 4px; }
+.sorth:hover { color: var(--accent); }
+.sorth:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sorth.on { color: var(--accent); }
+table.dc td, table.dc th { text-align: left; }
+table.dc tr.me td { background: var(--up-bg); }
+table.dc tr.me td.strong { color: var(--up); }
 .buzzlist { list-style: none; margin: 8px 0 0; padding: 0; }
 .buzz { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
 .bz-main { flex: 1; min-width: 0; }

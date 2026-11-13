@@ -220,7 +220,7 @@
       var rows;
       if (scope === "last3") { rows = last(seasonRows(p), 3); }
       else if (scope === "last") { rows = last(p.rows, Math.max(1, n || 3)); }
-      else if (scope === "since") rows = p.rows;
+      else if (scope === "since") rows = sinceRows(p, n);
       else rows = seasonRows(p);
       var g = rows.length;
       var o = { g: g };
@@ -247,9 +247,11 @@
     }
 
     /* ---- the games a compare sample covers ---- */
+    /* Games from season `from` onward (all loaded games when from is missing). */
+    function sinceRows(p, from) { return from ? p.rows.filter(function (r) { return r.season >= from; }) : p.rows; }
     function sample(p, scope, n) {
       if (scope === "last") return last(p.rows, Math.max(1, n || 3));
-      if (scope === "since") return p.rows;
+      if (scope === "since") return sinceRows(p, n);
       return seasonRows(p);
     }
     /* Box-score totals and rates (the stats ESPN and Pro Football Reference list), from a set of games. */
@@ -276,8 +278,8 @@
     /* ---- head to head: weeks both played ---- */
     function headToHead(a, b, fmt, scope, n) {
       function key(r) { return r.season + "-" + r.week; }
-      var ra = scope === "since" ? a.rows : scope === "last" ? last(a.rows, n || 3) : seasonRows(a);
-      var rb = scope === "since" || scope === "last" ? b.rows : seasonRows(b);
+      var ra = scope === "since" ? sinceRows(a, n) : scope === "last" ? last(a.rows, n || 3) : seasonRows(a);
+      var rb = scope === "since" ? sinceRows(b, n) : scope === "last" ? b.rows : seasonRows(b);
       var mb = {};
       rb.forEach(function (r) { mb[key(r)] = r; });
       var wa = 0, wb = 0, ties = 0, cnt = 0, da = [], db = [];
@@ -472,7 +474,7 @@
 
     return {
       data: data, byId: byId, FORMATS: FORMATS, YARD_LABEL: YARD_LABEL,
-      sample: sample, statLine: statLine, fp: fp, seasonRows: seasonRows, weekLog: weekLog, matchup: matchup, trendGroups: trendGroups, chips: chips,
+      sample: sample, sinceRows: sinceRows, statLine: statLine, fp: fp, seasonRows: seasonRows, weekLog: weekLog, matchup: matchup, trendGroups: trendGroups, chips: chips,
       summary: summary, headToHead: headToHead, risers: risers, efficiency: efficiency, topScorers: topScorers,
       fallout: fallout, dvpTable: dvpTable, hasSleeper: hasSleeper, hasBuzz: hasBuzz, playerNews: playerNews, waiverMentions: waiverMentions, buzzList: buzzList, waiverArticles: waiverArticles, buzzPlayers: buzzPlayers, slCount: slCount, slList: slList, recentMetrics: recentMetrics, search: search, avg: avg, r1: r1, pct: pct, ordinal: ordinal,
       opps: opps, keyYards: keyYards

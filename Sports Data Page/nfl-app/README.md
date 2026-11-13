@@ -56,12 +56,12 @@ nflverse supplies standard and PPR points. Half PPR = (standard + PPR) / 2. Stan
 4 per pass TD, -2 per INT, 0.1 per rush or receiving yard, 6 per TD, -2 per fumble lost, 2 per two-point conversion.
 
 ## What each tab shows
-- Home: movers (scoring up / workload up) that rotate QB, RB, WR, TE until you pick one; new starters; injury watch.
+- Home: movers (scoring up / workload up), top scorers and most added, all rotating QB, RB, WR, TE together until you pick one; new starters; injury watch.
 - Player: injury status and ESPN % rostered in the header; a "chance at a bigger role" call-out when teammates are out,
-  with his numbers in past games without them; Overview (charts, or a table-only box score) and Splits & stat lookup
+  with his numbers in past games without them; his team's depth chart at his position (Sleeper); Overview (charts, or a table-only box score) and Splits & stat lookup
   (type questions like "home games vs KC in primetime" or "without Henderson").
-- Compare: Fantasy view (points, consistency, opportunity) or Stats view (box-score totals and rates). Enter adds a player.
-- Matchups: four tables, defense stats vs QB / RB / WR / TE, ranked 1-32 per column, green (easiest) to red (toughest).
+- Compare: Fantasy view (points, consistency, opportunity) or Stats view (box-score totals and rates) over this season, the last N games, or since any earlier season loaded. Enter adds a player.
+- Matchups: four tables, defense stats vs QB / RB / WR / TE, ranked 1-32 per column, green (easiest) to red (toughest). Click a column header to sort by it (1st to last, last to first, back to default).
 - Risers: new starters, players out or on IR with who is next up, players who changed teams, questionable starters,
   then the usage and scoring lists.
 - Adds & drops: waiver buzz (click a name to open the article), "good game, low ownership", Sleeper adds and drops.
