@@ -1,7 +1,7 @@
 # macOS
 .DS_Store
 
-# Claude Code local settings
+# Local tool settings
 .claude/
 
 # Downloaded raw data (re-created by src/refresh.py)
