@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# Downloaded raw data (re-created by src/refresh.py)
+**/raw/
+
+# Old project zips
+*.zip
+
+# Python
+__pycache__/
+*.pyc

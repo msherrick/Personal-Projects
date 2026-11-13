@@ -1,0 +1,33 @@
+{
+  "_note": "Public RSS/Atom feeds to read headlines from. Add or remove entries freely. A feed that fails is skipped and reported on the Adds & drops tab. Unverified: these URLs are my best guesses, so if one reports an error, find the site's RSS link and replace the url. RotoWire's player news items read like 'Player: update', so they match players well.",
+  "feeds": [
+    {
+      "name": "RotoWire NFL News",
+      "url": "https://www.rotowire.com/rss/news.php?sport=NFL"
+    },
+    {
+      "name": "ESPN NFL",
+      "url": "https://www.espn.com/espn/rss/nfl/news"
+    },
+    {
+      "name": "Pro Football Talk",
+      "url": "https://profootballtalk.nbcsports.com/feed/"
+    },
+    {
+      "name": "CBS Sports NFL",
+      "url": "https://www.cbssports.com/rss/headlines/nfl/"
+    },
+    {
+      "name": "FantasyPros",
+      "url": "https://www.fantasypros.com/feed/"
+    },
+    {
+      "name": "RotoBaller",
+      "url": "https://www.rotoballer.com/feed"
+    },
+    {
+      "name": "Pro Football Network",
+      "url": "https://www.profootballnetwork.com/feed/"
+    }
+  ]
+}

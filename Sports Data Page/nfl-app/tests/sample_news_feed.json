@@ -1,0 +1,54 @@
+{
+ "fetched": "2026-11-10T15:00:00+00:00",
+ "feeds": [
+  {
+   "name": "Sample feed (fake)",
+   "ok": true,
+   "items": 5,
+   "error": null
+  },
+  {
+   "name": "Example broken feed",
+   "ok": false,
+   "items": 0,
+   "error": "Not Found"
+  }
+ ],
+ "items": [
+  {
+   "title": "SAMPLE: Week 10 waiver wire: Joe Fagnano, Tyler Allgeier top the list",
+   "link": "https://example.com/sample-1",
+   "source": "Sample feed (fake)",
+   "summary": "",
+   "published": "2026-11-10T10:00:00+00:00"
+  },
+  {
+   "title": "SAMPLE: Must-add running backs for Week 10 including Tyler Allgeier",
+   "link": "https://example.com/sample-2",
+   "source": "Sample feed (fake)",
+   "summary": "",
+   "published": "2026-11-09T19:00:00+00:00"
+  },
+  {
+   "title": "SAMPLE: Lamar Jackson injury update",
+   "link": "https://example.com/sample-3",
+   "source": "Sample feed (fake)",
+   "summary": "",
+   "published": "2026-11-09T09:00:00+00:00"
+  },
+  {
+   "title": "SAMPLE: Streamers and stashes for the stretch run",
+   "link": "https://example.com/sample-4",
+   "source": "Sample feed (fake)",
+   "summary": "Joe Fagnano is the name to know.",
+   "published": "2026-11-08T13:00:00+00:00"
+  },
+  {
+   "title": "SAMPLE: CeeDee Lamb talks offense",
+   "link": "https://example.com/sample-5",
+   "source": "Sample feed (fake)",
+   "summary": "",
+   "published": "2026-11-08T03:00:00+00:00"
+  }
+ ]
+}
