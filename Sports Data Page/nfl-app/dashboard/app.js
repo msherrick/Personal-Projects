@@ -195,25 +195,40 @@
     var total = sumFn(fn), fmt = dec ? f1 : f0;
     return { h: h, cls: cls || "", get: function (r) { return fmt(fn(r)); }, tot: function (rs) { return fmt(total(rs)); }, per: function (rs) { return f1(total(rs) / rs.length); } };
   }
-  function ptsCols(p) {
-    var cols = [];
-    if (p.pos === "QB") cols.push(pcol("Att", function (r) { return r.att || 0; }), pcol("Carries", function (r) { return r.ra || 0; }));
-    else if (p.pos === "RB") cols.push(pcol("Carries", function (r) { return r.ra || 0; }), pcol("Targets", function (r) { return r.tgt || 0; }));
-    else cols.push(pcol("Targets", function (r) { return r.tgt || 0; }));
-    cols.push(
-      pcol(p.pos === "QB" ? "Pass yds" : "Yards", function (r) { return core.keyYards(r, p.pos); }),
-      pcol("TD", function (r) { return (r.ptd || 0) + (r.rtd || 0) + (r.rectd || 0); }),
+  /* Fantasy view columns, grouped like a box score: Passing / Rushing / Receiving, then points in each format.
+     WRs and TEs get a Rushing group only when they had carries in these games. */
+  function ptsCols(p, rows) {
+    function k(key) { return function (r) { return r[key] || 0; }; }
+    function grp(g, list) { list.forEach(function (c, i) { c.g = g; if (i === 0) c.cls = (c.cls ? c.cls + " " : "") + "gs"; }); return list; }
+    var pass = grp("Passing", [pcol("Cmp", k("cmp")), pcol("Att", k("att")), pcol("Yds", k("pyd")), pcol("TD", k("ptd")), pcol("INT", k("int"))]);
+    var rush = grp("Rushing", [pcol("Car", k("ra")), pcol("Yds", k("ryd")), pcol("TD", k("rtd"))]);
+    var recv = grp("Receiving", [pcol("Tgt", k("tgt")), pcol("Rec", k("rec")), pcol("Yds", k("recyd")), pcol("TD", k("rectd"))]);
+    var pts = grp("Fantasy points", [
       pcol("Std", function (r) { return core.fp(r, "std"); }, 1, state.fmt === "std" ? "strong" : ""),
       pcol("Half", function (r) { return core.fp(r, "half"); }, 1, state.fmt === "half" ? "strong" : ""),
-      pcol("PPR", function (r) { return core.fp(r, "ppr"); }, 1, state.fmt === "ppr" ? "strong" : ""));
-    return cols;
+      pcol("PPR", function (r) { return core.fp(r, "ppr"); }, 1, state.fmt === "ppr" ? "strong" : "")]);
+    if (p.pos === "QB") return pass.concat(rush, pts);
+    if (p.pos === "RB") return rush.concat(recv, pts);
+    var anyRush = (rows || []).some(function (r) { return r.ra > 0; });
+    return recv.concat(anyRush ? rush : [], pts);
   }
   /* entries: weekLog entries (newest first). */
   function logTable(p, entries, view, withSeason) {
-    var cols = view === "stats" ? STAT_COLS[p.pos] : ptsCols(p);
     var played = entries.filter(function (e) { return e.kind === "played"; }).map(function (e) { return e.row; });
-    var h = "<table><thead><tr>" + (withSeason ? "<th>Yr</th>" : "") + "<th>Wk</th><th>Opp</th><th>Snap %</th>";
-    cols.forEach(function (c) { h += "<th>" + c.h + "</th>"; });
+    var cols = view === "stats" ? STAT_COLS[p.pos] : ptsCols(p, played);
+    var grouped = cols.some(function (c) { return c.g; });
+    var h = "<table" + (grouped ? ' class="box"' : "") + "><thead>";
+    if (grouped) {
+      h += '<tr><th colspan="' + (3 + (withSeason ? 1 : 0)) + '"></th>';
+      cols.forEach(function (c, i) {
+        if (i && cols[i - 1].g === c.g) return;
+        var n = cols.filter(function (x) { return x.g === c.g; }).length;
+        h += '<th class="grp" colspan="' + n + '">' + c.g + "</th>";
+      });
+      h += "</tr>";
+    }
+    h += "<tr>" + (withSeason ? "<th>Yr</th>" : "") + "<th>Wk</th><th>Opp</th><th>Snap %</th>";
+    cols.forEach(function (c) { h += '<th class="' + (c.cls || "").replace("strong", "") + '">' + c.h + "</th>"; });
     h += "</tr></thead><tbody>";
     entries.forEach(function (e) {
       var cls = e.kind === "played" ? "" : e.kind;
@@ -224,7 +239,7 @@
       h += "</tr>";
     });
     if (played.length) {
-      var span = 3 + (withSeason ? 1 : 0);
+      var span = 2 + (withSeason ? 1 : 0);  // Wk, Opp (and Yr); Snap % gets its own cell
       var snaps = played.map(function (r) { return r.snap; }).filter(function (x) { return x != null; });
       h += '<tr class="total"><td colspan="' + span + '">' + (view === "stats" ? "Total (shares: average)" : "Total") + " · " + played.length + " games played</td><td>" + (snaps.length ? pc(core.avg(snaps)) : "–") + "</td>";
       cols.forEach(function (c) { h += '<td class="' + (c.cls || "") + '">' + c.tot(played) + "</td>"; });
@@ -299,8 +314,90 @@
   function kpi(label, value, sub) {
     return '<div class="kpi"><p class="label">' + esc(label) + '</p><p class="num">' + esc(value) + '</p><p class="sub">' + esc(sub) + "</p></div>";
   }
+  /* ---------- betting lines (DraftKings, via ESPN) ----------
+     [key, label, value from a game row, decimals for averages] in display order. */
+  var LINES = [
+    ["pyd", "Passing yards", function (r) { return r.pyd || 0; }, 0],
+    ["ptd", "Passing TDs", function (r) { return r.ptd || 0; }, 1],
+    ["cmp", "Completions", function (r) { return r.cmp || 0; }, 1],
+    ["att", "Pass attempts", function (r) { return r.att || 0; }, 1],
+    ["int", "Interceptions", function (r) { return r.int || 0; }, 1],
+    ["pryd", "Passing + rushing yards", function (r) { return (r.pyd || 0) + (r.ryd || 0); }, 0],
+    ["rec", "Receptions", function (r) { return r.rec || 0; }, 1],
+    ["recyd", "Receiving yards", function (r) { return r.recyd || 0; }, 0],
+    ["ryd", "Rushing yards", function (r) { return r.ryd || 0; }, 0],
+    ["ra", "Carries", function (r) { return r.ra || 0; }, 1],
+    ["rryd", "Rushing + receiving yards", function (r) { return (r.ryd || 0) + (r.recyd || 0); }, 0],
+    ["atd", "Anytime TD (rush or catch)", function (r) { return (r.rtd || 0) + (r.rectd || 0); }, 1]
+  ];
+  // How often he went over a line in a set of games (a push counts as not over).
+  function hitRate(rows, fn, line) {
+    var over = rows.filter(function (r) { return fn(r) > line; }).length;
+    return { over: over, n: rows.length };
+  }
+  function hitCell(h) {
+    if (!h.n) return "<td>–</td>";
+    var r = h.over / h.n, cls = h.n >= 3 && r >= 0.6 ? "up" : h.n >= 3 && r <= 0.4 ? "down" : "flat";
+    return '<td><span class="pill ' + cls + '">' + h.over + " of " + h.n + "</span></td>";
+  }
+  function linesHtml(p) {
+    var pm = meta.props;
+    if (!pm) return "";
+    var h = '<h4 class="subhead">This week\'s lines <span class="hint">' + esc(pm.book || "DraftKings") + ", Week " + pm.week + "</span></h4>";
+    if (!p.props) {
+      return h + '<p class="muted">' + (p.next && p.next.bye ? "Bye this week, so no lines." : "No " + esc(pm.book || "DraftKings") + " lines are posted for " + esc(p.name) + " yet. Props usually appear a few days before the game.") + "</p>";
+    }
+    var all = p.rows, l10 = all.slice(-10), l5 = all.slice(-5), szn = core.seasonRows(p, CUR);
+    h += '<div class="tablewrap"><table class="lines"><thead><tr><th>Bet</th><th>Opened</th><th>Now</th><th>Last 5</th><th>Last 10</th><th>' + CUR + '</th><th>Avg, last 10</th></tr></thead><tbody>';
+    LINES.forEach(function (L) {
+      var ln = p.props[L[0]];
+      if (!ln || ln[0] == null) return;
+      var cur = ln[0], opn = ln[1], atd = L[0] === "atd";
+      var mv = !atd && opn != null && Math.abs(cur - opn) > 1e-9 ? ' <span class="sub ' + (cur > opn ? "mvup" : "mvdn") + '">' + (cur > opn ? "▲" : "▼") + " " + Math.abs(cur - opn).toFixed(1) + "</span>" : "";
+      var avg = l10.length ? core.avg(l10.map(L[2])) : null;
+      h += '<tr><th scope="row">' + L[1] + "</th><td>" + (atd ? "–" : opn == null ? "–" : opn) + '</td><td class="strong">' + (atd ? "Over 0.5" : cur) + mv + "</td>" +
+        hitCell(hitRate(l5, L[2], cur)) + hitCell(hitRate(l10, L[2], cur)) + hitCell(hitRate(szn, L[2], cur)) +
+        "<td>" + (avg == null ? "–" : avg.toFixed(L[3])) + "</td></tr>";
+    });
+    h += "</tbody></table></div>";
+    var when = pm.fetched ? new Date(pm.fetched).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    h += '<p class="note">"Last 5" and "Last 10" count his last games played, across seasons; the ' + CUR + " column is this season. Each shows how many times he went <b>over</b> today's line. Green means over in 60% or more, red 40% or less. Lines as of " + esc(when) + "; they move until kickoff. For information only.</p>";
+    return h;
+  }
+
   /* Sleeper's depth chart for the player's position group. Sleeper numbers WRs across the whole room and tags each with a spot (left, slot, right). */
-  var DC_SPOTS = { LWR: "Left (X)", SWR: "Slot", RWR: "Right (Z)" };
+  var DC_SPOTS = { LWR: "X (outside left)", SWR: "Slot", RWR: "Z (outside right)" };
+  // Each team's most recent game week this season (Thursday games make "Week WK" partial for most teams).
+  var teamLastWk = {};
+  DATA.players.forEach(function (q) { core.seasonRows(q, CUR).forEach(function (r) { var t = r.tm || q.team; if (!(teamLastWk[t] >= r.week)) teamLastWk[t] = r.week; }); });
+  function lastGameSnap(q) {
+    var wk = teamLastWk[q.team], rows = core.seasonRows(q, CUR), lr = rows[rows.length - 1];
+    return { wk: wk, txt: lr && lr.week === wk ? pc(lr.snap) : "Did not play" };
+  }
+  var ORD = ["Starter", "2nd", "3rd", "4th", "5th", "6th"];
+  /* WRs: one row per spot (X, slot, Z), with the players at that spot left to right in Sleeper's order. */
+  function wrGridHtml(p, listed) {
+    var spots = ["LWR", "SWR", "RWR"].map(function (g) {
+      return [g, listed.filter(function (q) { return q.sl.dp === g; }).sort(function (a, b) { return a.sl.o - b.sl.o; })];
+    }).filter(function (x) { return x[1].length; });
+    var cols = Math.min(ORD.length, Math.max.apply(null, spots.map(function (x) { return x[1].length; })));
+    function cell(q) {
+      if (!q) return "<td></td>";
+      var rows = core.seasonRows(q, CUR), ap = availPill(q), ls = lastGameSnap(q);
+      var bits = ["WR" + q.sl.o, ls.txt === "Did not play" ? "did not play Wk " + ls.wk : ls.txt + " snaps Wk " + ls.wk];
+      if (rows.length) bits.push(f1(core.avg(rows.map(function (r) { return core.fp(r, state.fmt); }))) + " " + fmtShort() + " PPG");
+      if (A.own(q) != null) bits.push(ownPct(A.own(q)) + "% ESPN");
+      return "<td" + (q.id === p.id ? ' class="me"' : "") + ">" + (q.id === p.id ? '<b>' + esc(q.name) + "</b>" : '<button class="link" data-open="' + esc(q.id) + '">' + esc(q.name) + "</button>") +
+        (ap ? " " + ap : "") + '<br><span class="sub">' + esc(bits.join(" · ")) + "</span></td>";
+    }
+    var h = '<div class="tablewrap"><table class="dc grid"><thead><tr><th>Spot</th>' + ORD.slice(0, cols).map(function (o) { return "<th>" + o + "</th>"; }).join("") + "</tr></thead><tbody>";
+    spots.forEach(function (x) {
+      h += '<tr><th scope="row">' + DC_SPOTS[x[0]] + "</th>";
+      for (var i = 0; i < cols; i++) h += cell(x[1][i]);
+      h += "</tr>";
+    });
+    return h + "</tbody></table></div>";
+  }
   function depthChartHtml(p) {
     if (!p.sl) return "";
     var mates = DATA.players.filter(function (q) { return q.team === p.team && q.pos === p.pos && q.sl; });
@@ -308,18 +405,18 @@
     var listed = mates.filter(function (q) { return groups.indexOf(q.sl.dp) >= 0 && q.sl.o != null; });
     if (!listed.length) return "";
     function row(q) {
-      var rows = core.seasonRows(q, CUR), lr = rows[rows.length - 1], ap = availPill(q);
-      var lastTxt = lr && lr.week === WK ? pc(lr.snap) : "Did not play";
-      return "<tr" + (q.id === p.id ? ' class="me"' : "") + "><td>" + p.pos + q.sl.o + "</td>" + (p.pos === "WR" ? "<td>" + DC_SPOTS[q.sl.dp] + "</td>" : "") +
+      var rows = core.seasonRows(q, CUR), ap = availPill(q);
+      var lastTxt = lastGameSnap(q).txt;
+      return "<tr" + (q.id === p.id ? ' class="me"' : "") + "><td>" + p.pos + q.sl.o + "</td>" +
         '<td class="strong">' + (q.id === p.id ? esc(q.name) : '<button class="link" data-open="' + esc(q.id) + '">' + esc(q.name) + "</button>") + "</td>" +
         "<td>" + (ap || '<span class="pill up">Healthy</span>') + "</td><td>" + lastTxt + "</td><td>" + f1(rows.length ? core.avg(rows.map(function (r) { return core.fp(r, state.fmt); })) : null) + "</td><td>" + (A.own(q) != null ? ownPct(A.own(q)) + "%" : "–") + "</td></tr>";
     }
-    var head = "<thead><tr><th>Depth</th>" + (p.pos === "WR" ? "<th>Lines up</th>" : "") + "<th>Player</th><th>Status</th><th>Snaps, Week " + WK + "</th><th>" + esc(fmtShort()) + " pts / g, " + CUR + "</th><th>ESPN rostered</th></tr></thead>";
+    var head = "<thead><tr><th>Depth</th><th>Player</th><th>Status</th><th>Snaps, Week " + teamLastWk[p.team] + "</th><th>" + esc(fmtShort()) + " pts / g, " + CUR + "</th><th>ESPN rostered</th></tr></thead>";
     var h = '<section class="panel"><h3>Depth chart <span class="hint">' + esc(p.team) + " " + esc(p.pos) + "s, from Sleeper</span></h3>";
     listed.sort(function (a, b) { return a.sl.o - b.sl.o; });
-    h += '<div class="tablewrap"><table class="dc">' + head + "<tbody>" + listed.map(row).join("") + "</tbody></table></div>";
+    h += p.pos === "WR" ? wrGridHtml(p, listed) : '<div class="tablewrap"><table class="dc">' + head + "<tbody>" + listed.map(row).join("") + "</tbody></table></div>";
     var off = mates.filter(function (q) { return listed.indexOf(q) < 0 && q.rstatus === "ACT"; });
-    h += '<p class="note">Order as Sleeper lists it' + (p.pos === "WR" ? ", with where each receiver usually lines up" : "") + ". Injured players keep their spot on the chart, so check the status column. Only players tracked in this dashboard are shown" +
+    h += '<p class="note">' + (p.pos === "WR" ? "Each row is a receiver spot, with the starter first. The WR number is Sleeper's order across the whole receiver room" : "Order as Sleeper lists it") + ". Injured players keep their spot on the chart, so check their status. Only players tracked in this dashboard are shown" +
       (off.length ? "; not on Sleeper's chart: " + off.map(function (q) { return esc(q.name); }).join(", ") : "") + ".</p></section>";
     return h;
   }
@@ -345,7 +442,7 @@
     h += '<div class="ptabs">' + seg("ptab", [["overview", "Overview"], ["splits", "Splits & stat lookup"]], state.ptab, "Player view") + "</div>";
     if (state.ptab === "splits") { $("view").innerHTML = h + splitsHtml(p); bindSplits(p); return; }
 
-    h += '<section class="panel"><h3>Trends <span class="hint">' + esc(fmtLabel()) + " scoring</span></h3>" + trendHtml(p) + "</section>";
+    h += '<section class="panel"><h3>Trends <span class="hint">' + esc(fmtLabel()) + " scoring</span></h3>" + trendHtml(p) + linesHtml(p) + "</section>";
     h += depthChartHtml(p);
 
     if (core.hasBuzz()) {
@@ -905,7 +1002,18 @@
   function renderTabs() {
     $("tabs").innerHTML = TABS.map(function (t) { return '<button class="tab' + (t === state.tab ? " on" : "") + '" data-tab="' + t + '"' + (t === state.tab ? ' aria-current="page"' : "") + ">" + TAB_LABEL[t] + "</button>"; }).join("");
     $("fmt").innerHTML = ["ppr", "half", "std"].map(function (f) { return '<button class="segbtn' + (f === state.fmt ? " on" : "") + '" data-fmt="' + f + '">' + (f === "ppr" ? "PPR" : f === "half" ? "Half" : "Std") + "</button>"; }).join("");
+    var th = currentTheme();
+    $("theme").innerHTML = [["light", "Light mode", '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'],
+      ["dark", "Dark mode", '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>']].map(function (o) {
+      return '<button class="segbtn' + (o[0] === th ? " on" : "") + '" data-theme-set="' + o[0] + '" aria-label="' + o[1] + '" aria-pressed="' + (o[0] === th) + '" title="' + o[1] + '">' + o[2] + "</button>";
+    }).join("");
     $("searchbox").style.visibility = state.tab === "home" ? "hidden" : "visible";
+  }
+  // Light or dark: the saved choice, else the computer's setting.
+  function currentTheme() {
+    var t = document.documentElement.getAttribute("data-theme");
+    if (t === "light" || t === "dark") return t;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
   function setBarHeight() {
     var bar = $("bar");
@@ -948,6 +1056,7 @@
     if (!t) return;
     var d = t.dataset;
     if (d.tab) go(d.tab);
+    else if (d.themeSet) { document.documentElement.setAttribute("data-theme", d.themeSet); lsSet("nfl.theme", d.themeSet); renderTabs(); }
     else if (d.fmt) { state.fmt = d.fmt; lsSet("nfl.fmt", d.fmt); render(); }
     else if (d.open) { if ($("q")) $("q").value = ""; if ($("results")) $("results").hidden = true; openPlayer(d.open); }
     else if (d.season) { state.logSeason = +d.season; render(); }

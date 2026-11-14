@@ -206,7 +206,13 @@
         if (wl[i].kind === "dnp") missed++; else break;
       }
       if (missed) g.avail.push({ tone: "down", text: "Did not play in the last " + missed + " team game" + (missed > 1 ? "s" : "") });
-      if (p.inj) g.avail.push({ tone: "down", text: "Listed " + p.inj.status + (p.inj.body ? " (" + p.inj.body + ")" : "") + " on the Week " + p.inj.week + " injury report" });
+      if (p.inj) {
+        var body = p.inj.body ? " (" + p.inj.body + ")" : "", prac = { DNP: "did not practice", LP: "limited in practice", FP: "full practice" }[p.inj.prac];
+        // No game status yet (early in the week): describe the practice participation instead.
+        g.avail.push({ tone: p.inj.status || p.inj.prac === "DNP" ? "down" : "flat",
+          text: p.inj.status ? "Listed " + p.inj.status + body + " on the Week " + p.inj.week + " injury report"
+                             : "On the Week " + p.inj.week + " injury report" + body + (prac ? ": " + prac + ", no game status yet" : "") });
+      }
       if (p.rstatus && p.rstatus !== "ACT") g.avail.push({ tone: "down", text: "Roster status: " + (p.rstatus === "RES" ? "on a reserve list" : p.rstatus) });
       return g;
     }

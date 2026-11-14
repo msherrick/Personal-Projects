@@ -1,10 +1,11 @@
 <title>Gridiron Desk</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<script>try { var t = localStorage.getItem("nfl.theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: sticky control bar (search, scoring, tabs) over a single column of panels, 960px max. */
 :root {
-  --bg: #f2f5f1;
+  --bg: #f6f7f6;
   --surface: #ffffff;
   --ink: #14211a;
   --muted: #566860;
@@ -66,6 +67,9 @@ h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; letter-spacing: .0
 .segbtn { background: none; border: 0; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--muted); border-right: 1px solid var(--line); }
 .segbtn:last-child { border-right: 0; }
 .segbtn.on { background: var(--accent); color: var(--accent-ink); }
+.barright { display: flex; gap: 8px; align-items: center; }
+#theme .segbtn { padding: 6px 9px; line-height: 1; }
+#theme svg { width: 15px; height: 15px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .asof { margin: 14px 0 6px; font-size: 12px; color: var(--muted); }
 
 /* panels */
@@ -256,6 +260,13 @@ table.heat .rk { font-size: 11px; color: var(--muted); margin-left: 4px; }
 table.dc td, table.dc th { text-align: left; }
 table.dc tr.me td { background: var(--up-bg); }
 table.dc tr.me td.strong { color: var(--up); }
+table.dc.grid th[scope="row"] { text-align: left; white-space: nowrap; font-weight: 600; color: var(--ink); vertical-align: top; }
+table.dc.grid td { vertical-align: top; white-space: normal; min-width: 170px; }
+table.dc.grid td.me { background: var(--up-bg); }
+table.dc.grid .pill { font-size: 11px; padding: 1px 7px; }
+table.lines th[scope="row"] { text-align: left; font-weight: 500; white-space: nowrap; }
+table.lines .mvup { color: var(--up); margin-left: 4px; }
+table.lines .mvdn { color: var(--down); margin-left: 4px; }
 .buzzlist { list-style: none; margin: 8px 0 0; padding: 0; }
 .buzz { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
 .bz-main { flex: 1; min-width: 0; }
@@ -285,7 +296,10 @@ table.dc tr.me td.strong { color: var(--up); }
       <input id="q" type="search" placeholder="Search a player (QB, RB, WR, TE)" autocomplete="off">
       <ul id="results" class="results" hidden></ul>
     </div>
-    <div id="fmt" class="seg" role="group" aria-label="Scoring format"></div>
+    <div class="barright">
+      <div id="fmt" class="seg" role="group" aria-label="Scoring format"></div>
+      <div id="theme" class="seg" role="group" aria-label="Color mode"></div>
+    </div>
     <nav id="tabs" class="tabs" aria-label="Sections"></nav>
   </div>
 </div>

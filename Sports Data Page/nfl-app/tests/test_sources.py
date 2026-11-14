@@ -1,4 +1,4 @@
-"""Offline tests for fetch_sleeper.py and fetch_espn.py using local fake servers shaped like the real responses.
+"""Offline tests for fetch_sleeper.py, fetch_espn.py and fetch_props.py using local fake servers shaped like the real responses.
 Run:  python3 tests/test_sources.py"""
 import http.server, importlib.util, json, sys, tempfile, threading
 from pathlib import Path
@@ -53,5 +53,23 @@ checks.update({
 })
 es.URL = base + "/espn-fail?x={season}"
 checks["espn failure returns 1 and keeps going"] = es.main() == 1
+# fetch_props: parsing ESPN propBets items (DraftKings lines)
+fp = load("fetch_props")
+A = "http://x/v2/sports/football/leagues/nfl/seasons/2026/athletes/{}?lang=en"
+items = [
+    {"athlete": {"$ref": A.format(11)}, "type": {"name": "Total Passing Yards (incl. overtime)"}, "lastUpdated": "2026-11-10T01:00Z",
+     "current": {"target": {"value": 265.5}}, "open": {"target": {"value": 260.5}}},
+    {"athlete": {"$ref": A.format(11)}, "type": {"name": "Total Passing Yards (incl. overtime)"}, "lastUpdated": "2026-11-12T01:00Z",
+     "current": {"target": {"value": 270.5}}, "open": {"target": {"value": 260.5}}},
+    {"athlete": {"$ref": A.format(11)}, "type": {"name": "Anytime Touchdown Scorer"}, "lastUpdated": "2026-11-12T01:00Z", "current": {}, "open": {}},
+    {"athlete": {"$ref": A.format(11)}, "type": {"name": "Total Tackles (incl. overtime)"}, "current": {"target": {"value": 4.5}}},
+    {"team": {"$ref": "http://x/teams/8"}, "type": {"name": "Team Total Points"}, "current": {"target": {"value": 24.5}}},
+]
+pr = fp.parse_props(items, {})
+checks.update({
+    "props keeps the newest line and the opening line": pr["11"]["pyd"]["cur"] == 270.5 and pr["11"]["pyd"]["open"] == 260.5,
+    "props stores anytime TD as over 0.5": pr["11"]["atd"]["cur"] == 0.5,
+    "props skips tackles and team totals": set(pr) == {"11"} and set(pr["11"]) == {"pyd", "atd"},
+})
 for k, v in checks.items(): print(("PASS " if v else "FAIL ") + k)
 print("ALL PASS" if all(checks.values()) else "SOME FAILED"); sys.exit(0 if all(checks.values()) else 1)

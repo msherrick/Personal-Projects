@@ -7,7 +7,7 @@
     python3 src/refresh.py --no-open  rebuild without opening the page in your browser
 
 Needs: python3, pandas, numpy.   (pip install pandas numpy)
-Sleeper and the RSS feeds are optional: if one fails, the dashboard still builds without it.
+Sleeper, ESPN (ownership and DraftKings lines) and the RSS feeds are optional: if one fails, the dashboard still builds without it.
 """
 import argparse
 import subprocess
@@ -64,6 +64,7 @@ def main():
         download_nflverse()
     run_optional("fetch_sleeper.py", "Sleeper data")
     run_optional("fetch_espn.py", "ESPN rostered percentages")
+    run_optional("fetch_props.py", "DraftKings player lines")
     run_optional("fetch_news.py", "Headlines")
     for script in ("build_data.py", "build_dashboard.py"):
         subprocess.run([sys.executable, str(ROOT / "src" / script)], check=True)

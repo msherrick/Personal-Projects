@@ -3,7 +3,7 @@
 
 Run:  python3 src/build_data.py
 Inputs (raw/): stats_player_week_YYYY.csv, snap_counts_YYYY.csv, injuries_YYYY.csv, rosters_YYYY.csv, games.csv
-Optional (raw/): sleeper_trending.json, sleeper_players.json, espn_ownership.json, news_feed.json
+Optional (raw/): sleeper_trending.json, sleeper_players.json, espn_ownership.json, espn_props.json, news_feed.json
 """
 import json
 import re
@@ -120,7 +120,7 @@ def short_prac(s):
     return None
 
 
-def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=None, espn_path=None) -> None:
+def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=None, espn_path=None, props_path=None) -> None:
     st = load_stats()
     for c in ["sack_fumbles_lost", "rushing_fumbles_lost", "receiving_fumbles_lost",
               "passing_2pt_conversions", "rushing_2pt_conversions", "receiving_2pt_conversions",
@@ -278,6 +278,15 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
                 esp_by_name.setdefault((norm_name(v.get("name", "")), v["pos"]), v)
         print(f"[espn] ownership for {len(esp)} players", file=sys.stderr)
 
+    # ---- optional: DraftKings player lines (via ESPN) for the upcoming week ----
+    props, props_meta = {}, None
+    ppp = Path(props_path) if props_path else RAW / "espn_props.json"
+    if ppp.exists():
+        j = json.loads(ppp.read_text())
+        props_meta = {"fetched": j.get("fetched"), "week": j.get("week"), "book": j.get("book", "DraftKings")}
+        props = j.get("players", {})
+        print(f"[props] lines for {len(props)} players, week {j.get('week')}", file=sys.stderr)
+
     def n(x, d=None):
         return None if pd.isna(x) else (round(float(x), 3) if d is None else round(float(x), d))
 
@@ -347,13 +356,20 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
             if e is not None:
                 own = {"p": e.get("own"), "s": e.get("start"), "c": e.get("chg")}
 
+        # Lines as {market: [current, open]}; only for the week the dashboard is previewing.
+        pr = None
+        if props and espn_id and props_meta and props_meta.get("week") == next_week:
+            got = props.get(espn_id)
+            if got:
+                pr = {k: [v.get("cur"), v.get("open")] for k, v in got.items()}
+
         head = (rr.headshot_url if rr is not None and isinstance(rr.headshot_url, str)
                 else (last.headshot_url if last is not None and isinstance(last.headshot_url, str) else None))
         players.append({
             "id": pid, "name": name, "pos": pos, "team": team, "prev": prev, "head": head,
             "sleeper": sleeper_id, "espn": espn_id,
             "rstatus": (rr.status if rr is not None and isinstance(rr.status, str) else None),
-            "inj": inj_obj, "sl": sl, "own": own,
+            "inj": inj_obj, "sl": sl, "own": own, "props": pr,
             "next": next_games.get(team),
             "log": rows,
         })
@@ -398,6 +414,7 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
             "weeks_played": weeks_played,
             "sleeper_players_fetched": slp_fetched,
             "ownership_fetched": esp_fetched,
+            "props": props_meta,
             "source": "nflverse (stats_player, snap_counts, injuries, rosters, schedules)",
         },
         "dvp": dvp,
@@ -422,6 +439,7 @@ if __name__ == "__main__":
     ap.add_argument("--sleeper", help="Sleeper trending JSON path (default raw/sleeper_trending.json)")
     ap.add_argument("--sleeper-players", help="Sleeper player database JSON (default raw/sleeper_players.json)")
     ap.add_argument("--espn", help="ESPN ownership JSON (default raw/espn_ownership.json)")
+    ap.add_argument("--props", help="DraftKings lines JSON (default raw/espn_props.json)")
     ap.add_argument("--news", help="headline feed JSON path (default raw/news_feed.json)")
     a = ap.parse_args()
-    main(a.out, a.sleeper, a.news, a.sleeper_players, a.espn)
+    main(a.out, a.sleeper, a.news, a.sleeper_players, a.espn, a.props)
