@@ -112,6 +112,7 @@ main { display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
 .chart .bar.latest { fill: var(--accent); }
 .chart .avg { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .55; }
 .chart .avg-label { fill: var(--muted); font-size: 11px; }
+.chart .avg-label.strong { fill: var(--ink); font-weight: 600; }
 .chart .hit { fill: transparent; }
 .chart .hit:hover { fill: color-mix(in srgb, var(--ink) 6%, transparent); }
 .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -137,6 +138,10 @@ tr.total td:first-child { text-align: left; }
 .cmp thead th { text-align: right; font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 600; }
 .cmp thead th:first-child { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
 .cmp td.lead { font-weight: 700; color: var(--accent); }
+/* Splits: one header style for every column. */
+.cmp.splits thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+/* Compare: numbers centered under each player's photo and name. */
+.cmp:not(.splits) td, .cmp:not(.splits) thead th.cmphead { text-align: center; }
 .barcol { width: 28%; min-width: 110px; padding-left: 4px; }
 .mini { display: block; height: 8px; border-radius: 2px; background: var(--bar); }
 .mini.up { background: var(--accent); } .mini.down { background: var(--down); opacity: .75; }
@@ -175,6 +180,8 @@ tr.total td:first-child { text-align: left; }
 .hl { color: var(--ink); font-weight: 500; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 .hl:hover { color: var(--accent); text-decoration-color: var(--accent); }
 .hmeta { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.wnames { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag.sm { padding: 3px 8px; font-size: 12px; }
 .kind { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 4px; background: var(--up-bg); color: var(--up); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px; }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .stickybar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--barh, 104px)); z-index: 15; display: flex; justify-content: space-between; align-items: center; gap: 8px 14px; flex-wrap: wrap; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -223,6 +230,7 @@ td.strong { font-weight: 700; }
 .folist { list-style: none; margin: 8px 0 0; padding: 0; }
 .fo { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px 20px; padding: 12px 0; border-top: 1px solid var(--line); }
 .fo-down { display: flex; gap: 10px; min-width: 0; }
+.fo-downs { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .fo-name { margin: 0; }
 .why { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .fo-next .label { margin-bottom: 4px; }
@@ -244,7 +252,7 @@ td.strong { font-weight: 700; }
 .qchips { margin: 10px 0 4px; }
 table.box th.grp { text-align: center; color: var(--ink); font-weight: 600; border-bottom: 0; }
 table.box .gs, table.box th.grp { border-left: 1px solid var(--line); }
-.av.xl { width: 72px; height: 72px; font-size: 22px; display: flex; margin: 4px 0 6px auto; }
+.av.xl { width: 72px; height: 72px; font-size: 22px; display: flex; margin: 4px auto 6px; }
 .cmphead { position: relative; vertical-align: bottom; min-width: 120px; }
 .cmphead .x { position: absolute; top: 0; right: 0; background: none; border: 0; color: var(--muted); font-size: 16px; line-height: 1; padding: 2px 4px; }
 .cmphead .x:hover { color: var(--down); }
@@ -272,9 +280,52 @@ table.lines .mvdn { color: var(--down); margin-left: 4px; }
 .bz-main { flex: 1; min-width: 0; }
 .bz-main .why { margin: 2px 0 0; }
 .buzz .tag { flex: none; }
+/* Wide tables: the first column (bet, stat, week, team) stays in place while the rest scrolls sideways. */
+.tablewrap th:first-child, .tablewrap td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.tablewrap thead th:first-child { z-index: 3; }
+.tablewrap tr.dnp td:first-child { background: color-mix(in srgb, var(--flat-bg) 55%, var(--surface)); }
+.tablewrap tr.sect th:first-child { background: var(--flat-bg); }
+/* Matchups: pin "#" and the team together. */
+.dvp th:first-child, .dvp td:first-child { width: 34px; min-width: 34px; max-width: 34px; }
+.dvp th:nth-child(2), .dvp td:nth-child(2) { position: sticky; left: 34px; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--line); }
+.dvpwrap thead th:first-child, .dvpwrap thead th:nth-child(2) { z-index: 3; }
+
+/* Player rows: photo | name over "POS · TEAM" | stats. In narrow lists the stats drop under the name
+   instead of squeezing the name onto several lines. */
+.rank { container-type: inline-size; }
+.rowbtn { display: grid; grid-template-columns: auto minmax(9em, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: center; }
+.rowbtn > .av { grid-row: 1 / span 2; align-self: center; }
+.rowbtn > .av + .nm { grid-row: 1 / span 2; }
+.rowbtn .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowbtn .nm > .sub { display: block; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.rowbtn .vals { grid-row: 1 / span 2; }
+@container (max-width: 460px) {
+  .rowbtn { grid-template-columns: auto minmax(0, 1fr); }
+  .rowbtn > .av + .nm { grid-row: 1; }
+  .rowbtn .vals { grid-row: 2; grid-column: 2; text-align: left; }
+}
+
 @media (max-width: 720px) {
-  .bar .wrap { grid-template-columns: minmax(0, 1fr) auto; }
-  .brand { grid-column: 1 / -1; font-size: 22px; }
+  /* Compact phone header: brand and toggles on one row, full-width search, then scrolling tabs. */
+  .bar { padding-top: 8px; }
+  .bar .wrap { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand right" "search search" "tabs tabs"; gap: 8px 10px; }
+  .brand { grid-area: brand; font-size: 20px; }
+  .barright { grid-area: right; gap: 6px; }
+  .searchbox { grid-area: search; }
+  .bar.home .searchbox { display: none; }
+  .searchbox input { padding: 7px 10px; }
+  .tabs { grid-area: tabs; margin: 0 -16px; padding: 0 16px; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent); }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs.atend { -webkit-mask-image: none; mask-image: none; }
+  .tab { font-size: 16px; padding: 6px 10px 8px; white-space: nowrap; }
+  .barright .segbtn { padding: 5px 8px; font-size: 12px; }
+  #theme .segbtn { padding: 5px 7px; }
+  .stickybar { position: static; }
+  /* Pinned first column wraps instead of taking half the screen. */
+  .tablewrap tbody th:first-child, .tablewrap tbody td:first-child { white-space: normal; min-width: 92px; max-width: 132px; }
+  table.lines th[scope="row"] { white-space: normal; }
+  .panel h3 .hint { display: block; margin: 2px 0 0; line-height: 1.35; }
   .phead { grid-template-columns: auto minmax(0, 1fr); }
   .nextgame { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); padding: 12px 0 0; }
   .pname h2 { font-size: 32px; }

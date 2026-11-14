@@ -4,6 +4,8 @@
   var core = NFLCore.create(DATA);
   var A = NFLAnalysis.create(core);
   var meta = DATA.meta, CUR = meta.season, WK = meta.last_week_played;
+  var WS = core.weekStatus, FW = core.FULLW;   // FW: last week most teams have finished (WK may be a Thursday-only partial week)
+  function gamesTxt(n) { return n + " game" + (n === 1 ? "" : "s"); }
   var FORMATS = core.FORMATS;
   // Seasons loaded in this build, oldest first (grows as more years are added to src/build_data.py).
   var SEASONS = Object.keys(meta.weeks_played || {}).map(Number).filter(function (y) { return y <= CUR; }).sort();
@@ -14,7 +16,7 @@
   var state = {
     fmt: "ppr", tab: "home", pid: null, logSeason: CUR, logView: "pts",
     compare: [], cmpScope: "season", cmpN: 3, pos: "WR", rpos: "ALL", basis: "last3", win: 24, apos: "ALL", cmpView: "fantasy",
-    hpos: "QB", hlock: false, hpause: false, ptab: "overview", splitQ: "", splitSeason: "", splitPos: "WR", wsort: "articles", wown: "all",
+    hpos: "QB", hlock: false, hpause: false, ptab: "overview", splitQ: "", splitSeason: "", splitPos: "WR",
     cmpSince: SEASONS[0], dsort: {}
   };
   var nextByTeam = {};
@@ -39,9 +41,14 @@
     var parts = name.replace(/\b(Jr|Sr|II|III|IV)\.?$/i, "").trim().split(/\s+/);
     return ((parts[0] || "?").charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "")).toUpperCase();
   }
+  // NFL headshots are full-size originals (often 3-4 MB); ask the image CDN for a small face crop instead.
+  function headUrl(u, px) {
+    return String(u).replace(/\/(upload|private)\/f_auto,q_auto\//, "/$1/f_auto,q_auto,w_" + px + ",h_" + px + ",c_fill,g_face/");
+  }
   function avatar(p, cls) {
+    var px = cls === "lg" || cls === "xl" ? 240 : 96;
     return '<span class="av ' + (cls || "") + '" aria-hidden="true">' + esc(initials(p.name)) +
-      (p.head ? '<img alt="" loading="lazy" src="' + esc(p.head) + '">' : "") + "</span>";
+      (p.head ? '<img alt="" loading="lazy" decoding="async" src="' + esc(headUrl(p.head, px)) + '">' : "") + "</span>";
   }
   function who(p) { return '<span class="nm">' + esc(p.name) + ' <span class="sub">' + p.pos + " · " + p.team + "</span></span>"; }
   function playerRow(p, vals) {
@@ -116,7 +123,7 @@
     return Math.ceil(v / 100) * 100;
   }
   function barChart(items, avgVal, label) {
-    var W = 640, H = 230, L = 40, R = 12, T = 12, B = 28;
+    var W = 640, H = 230, L = 40, R = 58, T = 12, B = 28;   // right margin holds the "avg" label so it never covers a bar
     var vals = items.map(function (i) { return i.val; }).filter(function (x) { return x != null; });
     var ymax = niceMax(Math.max.apply(null, vals.concat([avgVal || 0, 1])));
     var ymin = Math.min(0, Math.min.apply(null, vals.concat([0])));
@@ -141,17 +148,17 @@
     });
     if (avgVal != null) {
       svg += '<line class="avg" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(avgVal) + '" y2="' + y(avgVal) + '"/>';
-      svg += '<text class="avg-label" x="' + (W - R) + '" y="' + (y(avgVal) - 5) + '" text-anchor="end">average in games played ' + f1(avgVal) + "</text>";
+      svg += '<text class="avg-label" x="' + (W - R + 6) + '" y="' + (y(avgVal) - 2) + '">avg</text><text class="avg-label strong" x="' + (W - R + 6) + '" y="' + (y(avgVal) + 11) + '">' + f1(avgVal) + "</text>";
     }
     return svg + "</svg>";
   }
   function lineChart(weeks, series) {
-    var W = 640, H = 200, L = 40, R = 64, T = 12, B = 28;
+    var W = 640, H = 200, L = 40, R = 12, T = 12, B = 28;
     var n = weeks.length;
     function xs(i) { return n === 1 ? (L + (W - L - R) / 2) : L + (W - L - R) * i / (n - 1); }
     var ymax = 0;
     series.forEach(function (s) { s.vals.forEach(function (v) { if (v != null && v > ymax) ymax = v; }); });
-    ymax = ymax >= 0.95 ? 1 : Math.max(0.5, Math.ceil(ymax * 10) / 10);
+    ymax = 1;   // shares: always 0 to 100%, gridlines at 25% steps
     function y(v) { return T + (H - T - B) * (1 - v / ymax); }
     var svg = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Usage by week">';
     [0, 0.25, 0.5, 0.75, 1].forEach(function (f) {
@@ -168,7 +175,6 @@
       });
       svg += '<path class="line s' + k + '" d="' + d + '"/>';
       s.vals.forEach(function (v, i) { if (v != null) svg += '<circle class="dot s' + k + '" cx="' + xs(i) + '" cy="' + y(v) + '" r="' + (i === lastI ? 4 : 2.5) + '"/>'; });
-      if (lastI >= 0) svg += '<text class="series-label s' + k + '" x="' + (xs(lastI) + 8) + '" y="' + (y(s.vals[lastI]) + 4) + '">' + esc(s.short) + "</text>";
     });
     weeks.forEach(function (w, i) {
       var parts = series.map(function (s) { return s.name + ": " + (s.vals[i] == null ? "–" : Math.round(s.vals[i] * 100) + "%"); });
@@ -212,6 +218,11 @@
     var anyRush = (rows || []).some(function (r) { return r.ra > 0; });
     return recv.concat(anyRush ? rush : [], pts);
   }
+  // "vs CIN" for home games, "@ CIN" for road games (from the schedule), like ESPN game logs.
+  function oppLabel(e) {
+    var r = e.row, gm = r && DATA.gm && DATA.gm[String(r.season)], g = gm && gm[r.tm] && gm[r.tm][r.week - 1];
+    return esc((g ? (g[1] ? "vs " : "@ ") : "") + e.opp);
+  }
   /* entries: weekLog entries (newest first). */
   function logTable(p, entries, view, withSeason) {
     var played = entries.filter(function (e) { return e.kind === "played"; }).map(function (e) { return e.row; });
@@ -234,7 +245,7 @@
       var cls = e.kind === "played" ? "" : e.kind;
       h += '<tr class="' + cls + '">' + (withSeason ? "<td>" + (e.row ? e.row.season : "") + "</td>" : "") + "<td>" + e.week + "</td>";
       if (e.kind === "bye") { h += '<td>BYE</td><td colspan="' + (cols.length + 1) + '"></td></tr>'; return; }
-      h += "<td>" + esc(e.opp) + "</td><td>" + (e.row.snap == null ? "–" : pc(e.row.snap)) + "</td>";
+      h += "<td>" + oppLabel(e) + "</td><td>" + (e.row.snap == null ? "–" : pc(e.row.snap)) + "</td>";
       cols.forEach(function (c) { h += '<td class="' + (c.cls || "") + '">' + c.get(e.row) + "</td>"; });
       h += "</tr>";
     });
@@ -297,7 +308,7 @@
     entries.forEach(function (e) {
       h += '<tr class="' + (e.kind === "played" ? "" : e.kind) + '">' + (withSeason ? "<td>" + (e.row ? e.row.season : "") + "</td>" : "") + "<td>" + e.week + "</td>";
       if (e.kind === "bye") { h += '<td>BYE</td><td colspan="99"></td></tr>'; return; }
-      h += "<td>" + esc(e.opp) + "</td><td>" + (e.row.snap == null ? "–" : pc(e.row.snap)) + "</td>";
+      h += "<td>" + oppLabel(e) + "</td><td>" + (e.row.snap == null ? "–" : pc(e.row.snap)) + "</td>";
       groups.forEach(function (g) { g[1].forEach(function (c, i) { h += '<td class="' + (i === 0 ? "gs" : "") + '">' + f0(e.row[c[1]]) + "</td>"; }); });
       h += '<td class="gs strong">' + f1(core.fp(e.row, state.fmt)) + "</td></tr>";
     });
@@ -439,6 +450,16 @@
       h += '<p class="lines">' + (nx.spread == null ? "" : "Spread " + sgn(nx.spread) + " · ") + (nx.total == null ? "" : "Total " + f1(nx.total) + " · ") + (nx.implied == null ? "" : "Team implied " + f1(nx.implied)) + "</p>";
     }
     h += "</div></section>";
+    // Season stat strip right under the header, as on ESPN and Sleeper player pages.
+    if (curRows.length) {
+      var s = core.summary(p, state.fmt, "season"), l3 = core.summary(p, state.fmt, "last3");
+      h += '<section class="kpis">' + kpi("Points / game", f1(s.fpg), "Last 3: " + f1(l3.fpg)) + kpi("Snap share", pc(s.snap), "Last 3: " + pc(l3.snap));
+      if (p.pos === "QB") h += kpi("Pass yds / game", f0(s.pyd), "Rush yds / game: " + f0(s.ryd)) + kpi("Attempts + carries", f1(s.opp), "Per game");
+      else if (p.pos === "RB") h += kpi("Carries + targets", f1(s.opp), "Per game · last 3: " + f1(l3.opp)) + kpi("Points per carry + target", s.ppo == null ? "–" : s.ppo.toFixed(2), "Carry share " + pc(s.csh));
+      else h += kpi("Targets / game", f1(s.tgt), "Last 3: " + f1(l3.tgt)) + kpi("Points per carry or target", s.ppo == null ? "–" : s.ppo.toFixed(2), "Target share " + pc(s.tsh));
+      h += "</section>";
+    }
+
     h += '<div class="ptabs">' + seg("ptab", [["overview", "Overview"], ["splits", "Splits & stat lookup"]], state.ptab, "Player view") + "</div>";
     if (state.ptab === "splits") { $("view").innerHTML = h + splitsHtml(p); bindSplits(p); return; }
 
@@ -449,15 +470,6 @@
       var pn = core.playerNews(p, 6);
       h += '<section class="panel"><h3>In the news <span class="hint">headlines from your RSS feeds, last 14 days</span></h3>' +
         (pn.length ? '<ul class="headlines">' + pn.map(function (it) { return "<li>" + headlineHtml(it, false) + "</li>"; }).join("") + "</ul>" : '<p class="muted">No recent headlines name ' + esc(p.name) + " in your feeds.</p>") + "</section>";
-    }
-
-    if (curRows.length) {
-      var s = core.summary(p, state.fmt, "season"), l3 = core.summary(p, state.fmt, "last3");
-      h += '<section class="kpis">' + kpi("Points / game", f1(s.fpg), "Last 3: " + f1(l3.fpg)) + kpi("Snap share", pc(s.snap), "Last 3: " + pc(l3.snap));
-      if (p.pos === "QB") h += kpi("Pass yds / game", f0(s.pyd), "Rush yds / game: " + f0(s.ryd)) + kpi("Attempts + carries", f1(s.opp), "Per game");
-      else if (p.pos === "RB") h += kpi("Carries + targets", f1(s.opp), "Per game · last 3: " + f1(l3.opp)) + kpi("Points per carry + target", s.ppo == null ? "–" : s.ppo.toFixed(2), "Carry share " + pc(s.csh));
-      else h += kpi("Targets / game", f1(s.tgt), "Last 3: " + f1(l3.tgt)) + kpi("Points per carry or target", s.ppo == null ? "–" : s.ppo.toFixed(2), "Target share " + pc(s.tsh));
-      h += "</section>";
     }
 
     var seasons = [CUR, CUR - 1, CUR - 2].filter(function (y) { return core.seasonRows(p, y).length; });
@@ -487,7 +499,7 @@
       var pl = wl.filter(function (e) { return e.kind === "played"; });
       var avgVal = pl.length ? core.avg(pl.map(function (e) { return isPts ? core.fp(e.row, state.fmt) : core.keyYards(e.row, p.pos); })) : null;
       var cap = isPts ? fmtLabel() + " points by week" : (p.pos === "QB" ? "Passing yards by week" : "Rushing + receiving yards by week");
-      h += '<h4 class="subhead first">' + esc(cap) + '</h4><div class="chart">' + barChart(items, avgVal, cap) + "</div>";
+      h += '<h4 class="subhead first">' + esc(cap) + ' <span class="hint">dashed line = average in games played</span></h4><div class="chart">' + barChart(items, avgVal, cap) + "</div>";
       var shareKey = p.pos === "RB" ? "csh" : "tsh";
       if (pl.length > 1) {
         var ser = [{ name: "Snap share", short: "Snaps", vals: wl.map(function (e) { return e.kind === "bye" ? null : e.row.snap; }) }];
@@ -516,7 +528,7 @@
     var ex = ["home games", "away games", "primetime", "last 5 games", "division games", "as underdog", "vs top 10 defenses", "in losses"];
     if (p.next && p.next.opp) ex.unshift("vs " + p.next.opp);
     var mates = A.roomOf(p.team, p.pos).filter(function (e) { return e.p.id !== p.id && e.base.snap != null && e.base.snap >= 0.3; });
-    if (mates[0]) ex.splice(2, 0, "without " + mates[0].p.name.split(" ").slice(-1)[0]);
+    if (mates[0]) ex.splice(2, 0, "without " + mates[0].p.name);
     return ex;
   }
   function splitRowHtml(label, s) {
@@ -524,7 +536,7 @@
     return '<tr><th scope="row">' + esc(label) + "</th><td>" + s.g + '</td><td class="strong">' + f1(s.fpg) + "</td><td>" + f1(s.total) + "</td><td>" + f1(s.wl) + "</td><td>" + f0(s.yds) + "</td><td>" + f2(s.td) + "</td><td>" + pc(s.snap) + "</td></tr>";
   }
   function splitHead(first) {
-    return "<thead><tr><th>" + esc(first) + "</th><th>G</th><th>" + fmtShort() + " PPG</th><th>Total pts</th><th>" + esc(A.UNIT[state.splitPos] || "Workload") + " / g</th><th>Yds / g</th><th>TD / g</th><th>Snap %</th></tr></thead>";
+    return "<thead><tr><th>" + esc(first) + "</th><th>G</th><th>" + fmtShort() + " pts / g</th><th>Total pts</th><th>" + esc(A.UNIT[state.splitPos] || "Workload") + " / g</th><th>Yds / g</th><th>TD / g</th><th>Snap %</th></tr></thead>";
   }
   function splitsHtml(p) {
     state.splitPos = p.pos;
@@ -572,14 +584,34 @@
     return "<b>" + f1(x.oppRecent) + "</b> " + (k === 1 ? "last game" : "last 3") + " <i>(" + sgn(x.dOpp) + " vs " + f1(x.oppPrior) + " before)</i>";
   }
   /* f: an entry from analysis.fallout (injured/out starter plus who is next up). */
-  function falloutHtml(f) {
-    var p = f.p;
-    var why = esc(f.av.label) + ' <span class="sub">(' + esc(f.av.src) + ")</span>. Averaged " + f1(f.avgPts) + " pts and " + pc(f.base.snap) + " of snaps while healthy" + (f.av.detail ? ". " + esc(f.av.detail) : "");
-    var h = '<li class="fo"><div class="fo-down">' + avatar(p) + '<div><p class="fo-name"><button class="link" data-open="' + esc(p.id) + '">' + esc(p.name) + '</button> <span class="sub">' + p.pos + " · " + p.team + "</span>" + ownBadge(p) + '</p><p class="why">' + why + "</p>" + newsLine(p) + "</div></div>";
-    h += '<div class="fo-next"><p class="label">' + (f.next.length ? "Next up at " + p.pos : "No clear replacement in the data") + "</p>";
-    f.next.forEach(function (n) {
+  /* Injury entries for the same team and position share one card, so the next-up players are listed once
+     (for example Nacua and Adams out, Mumfield and Atwell next up). Keeps the original ranking order. */
+  function groupFallout(list) {
+    var groups = [], byKey = {};
+    list.forEach(function (f) {
+      var key = f.p.team + "|" + f.p.pos;
+      if (!byKey[key]) { byKey[key] = { team: f.p.team, pos: f.p.pos, down: [], next: [] }; groups.push(byKey[key]); }
+      var g = byKey[key];
+      g.down.push(f);
+      f.next.forEach(function (n) { if (!g.next.some(function (x) { return x.p.id === n.p.id; })) g.next.push(n); });
+    });
+    groups.forEach(function (g) {   // a player who is out himself is not "next up"
+      var ids = {}; g.down.forEach(function (f) { ids[f.p.id] = 1; });
+      g.next = g.next.filter(function (n) { return !ids[n.p.id]; }).slice(0, 2);
+    });
+    return groups;
+  }
+  function falloutHtml(g) {
+    var h = '<li class="fo"><div class="fo-downs">';
+    g.down.forEach(function (f) {
+      var p = f.p;
+      var why = esc(A.fullLabel(f.av)) + ' <span class="sub">· ' + esc(f.av.src) + "</span>. Averaged " + f1(f.avgPts) + " pts and " + pc(f.base.snap) + " of snaps while healthy";
+      h += '<div class="fo-down">' + avatar(p) + '<div><p class="fo-name"><button class="link" data-open="' + esc(p.id) + '">' + esc(p.name) + '</button> <span class="sub">' + p.pos + " · " + p.team + "</span>" + ownBadge(p) + '</p><p class="why">' + why + "</p>" + newsLine(p) + "</div></div>";
+    });
+    h += '</div><div class="fo-next"><p class="label">' + (g.next.length ? "Next up at " + g.pos + " for " + g.team : "No clear replacement in the data") + "</p>";
+    g.next.forEach(function (n) {
       var bits = [];
-      if (n.dco != null) bits.push(p.pos + n.dco + " on depth chart");
+      if (n.dco != null) bits.push(g.pos + n.dco + " on depth chart");
       bits.push(n.lastSnap != null ? pc(n.lastSnap) + " of snaps last game" : "avg " + pc(n.l3) + " of snaps");
       if (n.pts != null) bits.push(f1(n.pts) + " pts");
       if (addsTxt(n.p)) bits.push(addsTxt(n.p));
@@ -590,7 +622,7 @@
   /* s: an entry from analysis.starterChanges (new name atop the depth chart). */
   function starterHtml(s) {
     var why = s.kind === "trade" && s.before.team !== s.team ? s.before.name + " was traded to " + (s.before.team || "another team")
-      : s.kind === "injury" ? s.before.name + " is " + s.reason : s.reason;
+      : s.reason;
     var tag = { trade: "Trade", injury: "Injury", depth: "Depth chart" }[s.kind];
     var bp = s.beforeBase && s.beforeBase.pts != null ? s.before.name + " averaged " + f1(s.beforeBase.pts) + " pts recently." : "";
     return '<li class="fo"><div class="fo-down">' + avatar(s.now) + '<div><p class="fo-name"><span class="kind">' + tag + '</span><button class="link" data-open="' + esc(s.now.id) + '">' + esc(s.now.name) + '</button> <span class="sub">' + s.pos + " · " + s.team + "</span>" + ownBadge(s.now) +
@@ -614,7 +646,7 @@
   }
   function homeTop() {
     var top = core.topScorers(state.fmt, state.hpos, 5);
-    return '<ol class="rank">' + (top.map(function (x) { return playerRow(x.p, "<b>" + f1(x.pts) + "</b> pts" + ownBadge(x.p)); }).join("") || '<li class="muted pad">No ' + state.hpos + "s played in Week " + WK + ".</li>") + "</ol>";
+    return '<ol class="rank">' + (top.map(function (x) { return playerRow(x.p, "<b>" + f1(x.pts) + "</b> pts" + ownBadge(x.p)); }).join("") || '<li class="muted pad">No ' + state.hpos + "s played in Week " + FW + ".</li>") + "</ol>";
   }
   function homeAdds() {
     var list = core.slList("add", 24, state.hpos, 5, state.fmt);
@@ -642,14 +674,14 @@
     }, 6000);
   }
   function renderHome() {
-    var fo = A.fallout(state.fmt).out.slice(0, 3), sc = A.starterChanges().slice(0, 4);
+    var fo = groupFallout(A.fallout(state.fmt).out).slice(0, 3), sc = A.starterChanges().slice(0, 4);
     var quick = core.topScorers(state.fmt, null, 4);
-    var h = '<section class="hero"><h1>Look up any player</h1><p class="lede">Trends, matchups and usage for every QB, RB, WR and TE, through Week ' + WK + ".</p>";
+    var h = '<section class="hero"><h1>Look up any player</h1><p class="lede">Trends, matchups and usage for every QB, RB, WR and TE, through Week ' + FW + ".</p>";
     h += '<div class="herosearch"><label for="hq" class="sr">Search players</label><input id="hq" type="search" placeholder="Search by name, like Jahmyr Gibbs" autocomplete="off"><ul id="hresults" class="results" hidden></ul></div>';
-    h += '<div class="quick"><span class="sub">Top scorers in Week ' + WK + ':</span>' + quick.map(function (x) { return '<button class="tag" data-open="' + esc(x.p.id) + '">' + avatar(x.p, "sm") + esc(x.p.name) + "</button>"; }).join("") + "</div></section>";
+    h += '<div class="quick"><span class="sub">Top scorers in Week ' + FW + ':</span>' + quick.map(function (x) { return '<button class="tag" data-open="' + esc(x.p.id) + '">' + avatar(x.p, "sm") + esc(x.p.name) + "</button>"; }).join("") + "</div></section>";
     h += '<section class="panel" id="moverspanel"><div class="panelhead"><h3>Movers <span class="hint">' + (state.hlock ? "pick a position" : "this and the two tables below rotate together every few seconds; hover to pause, click a position to stay on it") + '</span></h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><div id="movers"></div></section>';
     h += '<div class="grid2">';
-    h += '<section class="panel rotp"><div class="panelhead"><h3>Top scorers, Week ' + WK + '</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">' + esc(fmtLabel()) + ' points, <span class="hposlbl"></span> only. Badges show the share of ESPN leagues that roster him.</p><div id="hometop"></div></section>';
+    h += '<section class="panel rotp"><div class="panelhead"><h3>Top scorers, Week ' + FW + '</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">' + esc(fmtLabel()) + ' points, <span class="hposlbl"></span> only. Badges show the share of ESPN leagues that roster him.</p><div id="hometop"></div></section>';
     if (core.hasSleeper()) h += '<section class="panel rotp"><div class="panelhead"><h3>Most added on Sleeper</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">Last 24 hours, across Sleeper leagues, <span class="hposlbl"></span> only. <button class="link" data-tab="adds">See all adds</button></p><div id="homeadds"></div></section>';
     h += "</div>";
     if (sc.length) h += '<section class="panel"><div class="panelhead"><h3>New starters</h3><button class="link" data-tab="risers">See all</button></div><p class="note">Players now listed first on their team\'s depth chart (Sleeper) because of an injury, a trade or a benching.</p><ul class="folist">' + sc.map(starterHtml).join("") + "</ul></section>";
@@ -812,7 +844,7 @@
   }
   /* Sortable columns: [key, header, rank key]. A rank key means "1st to last" uses that rank. */
   function dvpCols(P) {
-    return [["team", "Defense"], ["n", "G"], ["fp", "Fantasy pts / g", "r_fp"], ["yd", core.YARD_LABEL[P] + " / g", "r_yd"], ["td", "TDs / g", "r_td"], ["tdt", "Total TDs", "r_tdt"], ["l4", "Last 4 games pts / g"]];
+    return [["team", "Defense"], ["n", "G"], ["fp", "Fantasy pts / g", "r_fp"], ["yd", core.YARD_LABEL[P] + " / g", "r_yd"], ["td", "TDs / g", "r_td"], ["tdt", "Total TDs", "r_tdt"], ["l4", "Last 4 games pts / g", "r_l4"]];
   }
   // Click once: 1st to last (most allowed first; A to Z for teams). Twice: last to first. Three times: back to default.
   function dvpSorted(P, rows) {
@@ -840,7 +872,7 @@
       var nx = nextByTeam[r.team];
       function cell(val, rk, fmt) { return "<td" + heat(rk, n) + '><b>' + fmt(val) + '</b> <span class="rk">' + core.ordinal(rk) + "</span></td>"; }
       h += "<tr><td>" + (rkKey ? r[rkKey] : i + 1) + '</td><td class="strong">' + esc(r.team) + "</td><td>" + r.n + "</td>" + cell(r.fp, r.r_fp, f1) + cell(r.yd, r.r_yd, f1) + cell(r.td, r.r_td, f2) + cell(r.tdt, r.r_tdt, f0) +
-        "<td>" + f1(r.l4) + "</td><td>" + (nx ? (nx.bye ? "Bye" : (nx.home ? "vs " : "at ") + esc(nx.opp)) : "–") + "</td></tr>";
+        (r.l4 == null ? "<td>–</td>" : cell(r.l4, r.r_l4, f1)) + "<td>" + (nx ? (nx.bye ? "Bye" : (nx.home ? "vs " : "at ") + esc(nx.opp)) : "–") + "</td></tr>";
     });
     return h + "</tbody></table></div>";
   }
@@ -886,7 +918,9 @@
     h += sc.length ? '<ul class="folist">' + sc.map(starterHtml).join("") + "</ul>" : '<p class="muted">No starter changes' + (pos ? " at " + pos : "") + ".</p>";
     h += "</section>";
     h += '<section class="panel"><h3>Out, on IR or left early <span class="hint">Week ' + meta.next_week + '</span></h3><p class="note">Regular starters ruled Out, Doubtful, on injured reserve or a reserve list (Sleeper and the injury report), or who played under 40% of their usual snaps in Week ' + WK + ". Next up = healthy teammates at the same position, by depth chart then recent snaps.</p>";
-    h += fo.out.length ? '<ul class="folist">' + fo.out.slice(0, 12).map(falloutHtml).join("") + "</ul>" + (fo.out.length > 12 ? '<p class="note">' + (fo.out.length - 12) + " more lower-scoring players not shown.</p>" : "") : '<p class="muted">No starters flagged' + (pos ? " at " + pos : "") + ".</p>";
+    var foG = groupFallout(fo.out), shownN = 0;
+    foG.slice(0, 12).forEach(function (g) { shownN += g.down.length; });
+    h += fo.out.length ? '<ul class="folist">' + foG.slice(0, 12).map(falloutHtml).join("") + "</ul>" + (fo.out.length > shownN ? '<p class="note">' + (fo.out.length - shownN) + " more lower-scoring players not shown.</p>" : "") : '<p class="muted">No starters flagged' + (pos ? " at " + pos : "") + ".</p>";
     h += "</section>";
     if (tc.length) {
       h += '<section class="panel"><h3>Changed teams</h3><p class="note">Regular contributors whose roster team changed during the ' + CUR + " season (trades and signings).</p><ol class=\"rank\">";
@@ -925,6 +959,12 @@
     }
     return (it.k === "waiver" ? '<span class="kind">Waiver</span>' : "") + '<a class="hl" href="' + esc(safeUrl(it.u)) + '" target="_blank" rel="noopener noreferrer">' + esc(it.t) + '</a><span class="hmeta">' + esc(meta) + "</span>";
   }
+  // One waiver article: headline link, source and date, then the players it names as small profile links.
+  function waiverArticleHtml(it) {
+    var names = core.buzzPlayers(it).slice(0, 10);
+    return '<li><a class="hl" href="' + esc(safeUrl(it.u)) + '" target="_blank" rel="noopener noreferrer">' + esc(it.t) + '</a><span class="hmeta">' + esc([it.s, shortDate(it.d)].filter(Boolean).join(" · ")) + "</span>" +
+      (names.length ? '<span class="wnames">' + names.map(function (q) { return '<button class="tag sm" data-open="' + esc(q.id) + '">' + esc(q.name) + ' <span class="sub">' + q.pos + "</span>" + (A.own(q) != null ? ' <span class="sub">' + ownPct(A.own(q)) + "%</span>" : "") + "</button>"; }).join("") + "</span>" : "") + "</li>";
+  }
   function newsLine(p) {
     if (!core.hasBuzz()) return "";
     var n = core.playerNews(p, 1)[0];
@@ -936,20 +976,6 @@
     var wm = core.hasBuzz() ? core.waiverMentions(x.p) : 0;
     if (wm) parts.push("in " + wm + " waiver article" + (wm > 1 ? "s" : ""));
     return playerRow(x.p, "<b>" + (kind === "add" ? "+" : "−") + x.count.toLocaleString("en-US") + "</b> " + (kind === "add" ? "adds" : "drops") + ownBadge(x.p) + (parts.length ? '<br><span class="sub">' + esc(parts.join(" · ")) + "</span>" : ""));
-  }
-  /* Waiver buzz row: the name opens the newest waiver article that mentions him; the small button opens his page. */
-  function buzzRow(x) {
-    var sub = [];
-    if (x.m) sub.push(f1(x.m.l3) + " pts last 3");
-    if (x.adds) sub.push("+" + x.adds.toLocaleString("en-US") + " Sleeper adds (24h)");
-    var art = x.articles[0];
-    var h = '<li class="buzz">' + avatar(x.p);
-    h += '<div class="bz-main"><p class="fo-name">' + (art ? '<a class="hl" href="' + esc(safeUrl(art.u)) + '" target="_blank" rel="noopener noreferrer">' + esc(x.p.name) + "</a>" : esc(x.p.name)) +
-      ' <span class="sub">' + x.p.pos + " · " + x.p.team + "</span>" + ownBadge(x.p) + "</p>";
-    if (art) h += '<p class="why">Newest: <a class="hl" href="' + esc(safeUrl(art.u)) + '" target="_blank" rel="noopener noreferrer">' + esc(art.t) + "</a> (" + esc([art.s, shortDate(art.d)].filter(Boolean).join(", ")) + ")" +
-      (x.articles.length > 1 ? " · also in " + x.articles.slice(1, 3).map(function (a) { return '<a class="hl" href="' + esc(safeUrl(a.u)) + '" target="_blank" rel="noopener noreferrer">' + esc(a.s || "another article") + "</a>"; }).join(", ") : "") + "</p>";
-    h += '<p class="why sub">' + x.waiver + " waiver article" + (x.waiver > 1 ? "s" : "") + (sub.length ? " · " + esc(sub.join(" · ")) : "") + "</p></div>";
-    return h + '<button class="tag" data-open="' + esc(x.p.id) + '">Profile</button></li>';
   }
   function renderAdds() {
     var win = state.win, winText = win === 24 ? "last 24 hours" : "last 7 days", pos = state.apos === "ALL" ? null : state.apos;
@@ -965,13 +991,11 @@
       var feeds = DATA.buzz.feeds || [], okN = feeds.filter(function (f) { return f.ok; }).length;
       var bad = feeds.filter(function (f) { return !f.ok; }).map(function (f) { return f.name + " (" + f.error + ")"; });
       var when = DATA.buzz.fetched ? new Date(DATA.buzz.fetched).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "unknown";
-      var bl = A.waiverBuzz(pos, 10, state.fmt, { sort: state.wsort, maxOwn: state.wown === "u50" ? 50 : null }), arts = core.waiverArticles(null, 10), nWaiver = core.waiverArticles(null, 0).length;
-      h += '<section class="panel"><div class="panelhead"><h3>Waiver buzz' + (pos ? " at " + pos : "") + '</h3><div class="controls">' +
-        seg("wsort", [["articles", "Most articles"], ["recent", "Newest"], ["adds", "Most adds"]], state.wsort, "Sort") +
-        (A.hasOwn() ? seg("wown", [["all", "Any rostered %"], ["u50", "Under 50% (ESPN)"]], state.wown, "Ownership") : "") + "</div></div>";
-      h += '<p class="note">Players named in waiver and pickup articles from your RSS feeds over the last 14 days, as of ' + esc(when) + ". Click a name to read the newest article about him. Feeds read: " + okN + " of " + feeds.length + (bad.length ? ". Not working: " + esc(bad.join("; ")) : "") + ".</p>";
-      h += bl.length ? '<ul class="buzzlist">' + bl.map(buzzRow).join("") + "</ul>" : '<p class="muted pad">' + (pos ? "No " + pos + "s are named in the " + nWaiver + " waiver article" + (nWaiver === 1 ? "" : "s") + " your feeds carry right now" + (state.wown === "u50" ? " (with the under-50% filter on)" : "") + ". Feed previews often skip player names, and most waiver columns come out Monday and Tuesday. The Sleeper adds and the low-ownership list below still cover " + pos + "s." : "No players named in waiver articles with these filters.") + "</p>";
-      h += '</section><section class="panel"><h3>Recent waiver articles</h3><p class="note">All positions, since most columns cover several. Headlines link to the original sites.</p>' + (arts.length ? '<ul class="headlines">' + arts.map(function (it) { return "<li>" + headlineHtml(it, true) + "</li>"; }).join("") + "</ul>" : '<p class="muted pad">No waiver headlines found in your feeds.</p>') + "</section>";
+      var arts = core.waiverArticles(null, 0).slice().sort(function (a, b) { return (b.d || "").localeCompare(a.d || ""); }).slice(0, 15);
+      h += '<section class="panel"><h3>Waiver wire articles <span class="hint">last 14 days · as of ' + esc(when) + "</span></h3>";
+      h += '<p class="note">Pickup columns from ' + okN + " of " + feeds.length + " news feeds" + (bad.length ? " (not working: " + esc(bad.join("; ")) + ")" : "") + ", newest first. Headlines open the original article; names open the player page.</p>";
+      h += arts.length ? '<ul class="headlines warts">' + arts.map(waiverArticleHtml).join("") + "</ul>" : '<p class="muted pad">No waiver articles in your feeds right now. Most waiver columns come out Monday and Tuesday.</p>';
+      h += "</section>";
     }
     if (A.hasOwn()) {
       var gems = A.hiddenGems(state.fmt, pos, 8, 40);
@@ -1008,12 +1032,22 @@
       return '<button class="segbtn' + (o[0] === th ? " on" : "") + '" data-theme-set="' + o[0] + '" aria-label="' + o[1] + '" aria-pressed="' + (o[0] === th) + '" title="' + o[1] + '">' + o[2] + "</button>";
     }).join("");
     $("searchbox").style.visibility = state.tab === "home" ? "hidden" : "visible";
+    $("bar").classList.toggle("home", state.tab === "home");
+    // Keep the current tab in view when the tab row scrolls (phones).
+    var on = document.querySelector(".tab.on"), tabs = $("tabs");
+    if (on && tabs && tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, on.offsetLeft - tabs.clientWidth / 2 + on.offsetWidth / 2);
+    tabFade();
   }
   // Light or dark: the saved choice, else the computer's setting.
   function currentTheme() {
     var t = document.documentElement.getAttribute("data-theme");
     if (t === "light" || t === "dark") return t;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  // Fade the right edge of the tab row only while more tabs are hidden off-screen.
+  function tabFade() {
+    var tabs = $("tabs");
+    if (tabs) tabs.classList.toggle("atend", tabs.scrollLeft + tabs.clientWidth >= tabs.scrollWidth - 4);
   }
   function setBarHeight() {
     var bar = $("bar");
@@ -1029,7 +1063,9 @@
     else if (state.tab === "risers") renderRisers();
     else renderAdds();
     setBarHeight();
-    $("asof").textContent = "Through Week " + WK + " · next games Week " + meta.next_week + " · data: nflverse";
+    $("asof").textContent = WS.partial
+      ? "Through Week " + FW + " · Week " + WK + " in progress (" + Math.round(WS.teamsPlayed / 2) + " of " + gamesTxt(Math.round(WS.teamsScheduled / 2)) + " played) · data: nflverse"
+      : "Through Week " + WK + " · next games Week " + meta.next_week + " · data: nflverse";
   }
   function go(tab) {
     state.tab = tab;
@@ -1075,8 +1111,6 @@
     else if (d.sq) { state.splitQ = d.sq; var sq = $("splitq"); if (sq) sq.value = d.sq; runSplit(player(state.pid)); }
     else if (d.jump) { var tgt = $(d.jump); if (tgt && tgt.scrollIntoView) tgt.scrollIntoView({ behavior: "smooth", block: "start" }); }
     else if (d.dsort) cycleDvpSort(d.dsort);
-    else if (d.wsort) { state.wsort = d.wsort; render(); }
-    else if (d.wown) { state.wown = d.wown; render(); }
     else if (d.add) { if (state.compare.indexOf(d.add) < 0 && state.compare.length < 5) state.compare.push(d.add); render(); }
     else if (d.remove) { state.compare = state.compare.filter(function (x) { return x !== d.remove; }); render(); }
   }
@@ -1102,6 +1136,8 @@
     initTip();
     if (window.addEventListener) { window.addEventListener("resize", setBarHeight); window.addEventListener("load", setBarHeight); }
     bindSearch("q", "results");
+    if ($("tabs")) $("tabs").addEventListener("scroll", tabFade);
+    if (window.addEventListener) window.addEventListener("resize", tabFade);
     render();
   }
   root.NFLApp = { init: init, state: state, render: render, go: go, openPlayer: openPlayer };

@@ -92,6 +92,31 @@
       return out;
     }
 
+    /* ---------- wording for availability labels ---------- */
+    function lowerFirst(t) { return t ? t.charAt(0).toLowerCase() + t.slice(1) : t; }
+    // Label plus Sleeper's short injury note inside one set of parentheses: "On injured reserve (knee - mcl; sprain)".
+    function fullLabel(av) {
+      var d = av.detail && av.detail.length <= 40 ? lowerFirst(av.detail) : "";
+      if (!d) return av.label;
+      return /\)$/.test(av.label) ? av.label.replace(/\)$/, "; " + d + ")") : av.label + " (" + d + ")";
+    }
+    // Compact form for inside a sentence: "IR: hamstring", "out: illness", "questionable".
+    function shortStatus(av) {
+      var l = av.label, m = l.match(/^(.*?)\s*\(([^)]*)\)$/), head = m ? m[1] : l, body = m ? m[2] : "";
+      if (/^Injury headline/.test(l)) return "injury headline";
+      head = head.replace(/^On injured reserve$/, "IR").replace(/^On the PUP list$/, "PUP list").replace(/^On a reserve list$/, "reserve list");
+      head = head === "IR" || head === "PUP list" ? head : lowerFirst(head);
+      return head + (body ? ": " + body : "");
+    }
+    // A sentence about a player's status: "Malik Willis is on injured reserve (groin)", "Rhamondre Stevenson did not practice (knee)".
+    function statusClause(name, av) {
+      var l = av.label;
+      if (/^Injury headline/.test(l)) return name + " is named in an injury headline";
+      if (/^(Did not|Limited|Played)/.test(l)) return name + " " + lowerFirst(l).replace(/^limited in practice/, "was limited in practice");
+      if (/^(On |Out|Questionable|Doubtful|Suspended)/.test(l)) return name + " is " + lowerFirst(l);
+      return name + ": " + l;
+    }
+
     /* ---------- position room ---------- */
     var roomCache = {};
     function orderFn(a, b) {
@@ -120,6 +145,35 @@
     }
     var UNIT = { QB: "pass attempts + carries", RB: "carries + targets", WR: "targets + carries", TE: "targets + carries" };
 
+    /* ---------- established starters ----------
+       A player is already "the starter" if he played a starter's share of snaps while healthy, or he led his
+       team's position room in snaps in the team's first game of the season (who started the year at the top).
+       WRs: anyone at 60%+ of snaps in that first game counts, since teams start two or three. */
+    var STARTER_SNAP = { QB: 0.8, RB: 0.55, WR: 0.7, TE: 0.65 }, WEEK1_WR = 0.6, week1Cache = {};
+    function week1Starters(team, pos) {
+      var key = team + "|" + pos;
+      if (week1Cache[key]) return week1Cache[key];
+      var first = null, rows = [];
+      data.players.forEach(function (q) {
+        if (q.pos !== pos) return;
+        core.seasonRows(q, CUR).forEach(function (r) {
+          if (r.tm !== team || r.snap == null) return;
+          rows.push({ id: q.id, week: r.week, snap: r.snap });
+          if (first == null || r.week < first) first = r.week;
+        });
+      });
+      var wk1 = rows.filter(function (r) { return r.week === first; }).sort(function (a, b) { return b.snap - a.snap; });
+      var ids = {};
+      if (pos === "WR") wk1.forEach(function (r) { if (r.snap >= WEEK1_WR) ids[r.id] = true; });
+      else if (wk1.length) ids[wk1[0].id] = true;
+      week1Cache[key] = ids;
+      return ids;
+    }
+    function isEstablished(p, me) {
+      var b = me && me.base && me.base.snap;
+      return (b != null && b >= STARTER_SNAP[p.pos]) || !!week1Starters(p.team, p.pos)[p.id];
+    }
+
     /* ---------- outlook for one player ---------- */
     function outlook(p) {
       var room = roomOf(p.team, p.pos);
@@ -132,26 +186,27 @@
       var res = { level: null, bullets: [], down: down, healthy: healthy, rank: rank, room: room, vacSnap: 0, vacWl: 0 };
       if (!me) return res;
       var haveDco = healthy.every(function (e) { return e.dco != null; });
-      if (down.length && me.av.sev <= 2) {
+      res.established = isEstablished(p, me);
+      // Starters already have the role, so a teammate's injury is not a "bigger role" story for them.
+      if (down.length && me.av.sev <= 2 && !res.established) {
         res.vacSnap = Math.min(1, sum(down.map(function (e) { return e.base.snap || 0; })));
         res.vacWl = sum(down.map(function (e) { return e.base.wl || 0; }));
-        var names = down.map(function (e) { return e.p.name + " (" + e.av.label.replace(/^Injury headline: .*/, "injury headline") + ")"; }).join("; ");
+        var names = down.map(function (e) { return e.p.name + " (" + shortStatus(e.av) + ")"; }).join("; ");
         res.bullets.push({ tone: "up", text: names + (down.length > 1 ? " are" : " is") + " out or hurt at " + p.pos + " for " + p.team + ". " +
           (down.length > 1 ? "Together they" : "He") + " averaged " + r1(res.vacWl) + " " + UNIT[p.pos] + " per game and " + pcs(res.vacSnap) + " of the snaps while healthy" });
-        var basis = haveDco ? "depth chart (Sleeper)" : "recent snaps";
+        var where = haveDco ? "on the " + p.team + " depth chart (Sleeper)" : "for " + p.team + " by recent snaps";
         if (rank === 1) {
-          res.bullets.push({ tone: "up", text: "Top healthy " + p.pos + " on the " + p.team + " " + basis + (me.lastSnap != null ? "; played " + pcs(me.lastSnap) + " of snaps in his last game" : "") + ", so he is the most likely to absorb that work" });
+          res.bullets.push({ tone: "up", text: "Top healthy " + p.pos + " " + where + (me.lastSnap != null ? "; played " + pcs(me.lastSnap) + " of snaps in his last game" : "") + ", so he is the most likely to absorb that work" });
           res.level = (res.vacSnap >= 0.35 || p.pos === "QB") ? "High" : "Medium";
         } else if (rank === 2) {
-          res.bullets.push({ tone: "flat", text: "Second healthy " + p.pos + " on the " + basis + " behind " + healthy[0].p.name + "; shares the opening" });
+          res.bullets.push({ tone: "flat", text: "Second healthy " + p.pos + " " + where + ", behind " + healthy[0].p.name + "; shares the opening" });
           res.level = "Medium";
-        } else if (rank > 2) {
-          res.bullets.push({ tone: "flat", text: "Number " + rank + " healthy " + p.pos + " on the " + basis + "; limited upside unless more of the room is out" });
-          res.level = "Low";
+        } else {
+          res.bullets = [];   // third or lower in line: too far down to call a bigger role
         }
       } else if (me.av.sev >= 3) {
         var nxt = healthy.filter(function (e) { return e.p.id !== p.id; }).slice(0, 2).map(function (e) { return e.p.name; });
-        res.bullets.push({ tone: "down", text: "Listed as " + me.av.label.toLowerCase() + (nxt.length ? ". Likely to absorb his work: " + nxt.join(" and ") : "") });
+        res.bullets.push({ tone: "down", text: statusClause(p.name, me.av) + (nxt.length ? ". Likely to absorb his work: " + nxt.join(" and ") : "") });
       }
       return res;
     }
@@ -207,7 +262,7 @@
           if (!now || now.p.id === before.p.id) return;
           var bp = before.p, kind, reason;
           if (bp.team !== team) { kind = "trade"; reason = bp.team ? "now with " + bp.team : "no longer on a roster"; }
-          else if (avail(bp).sev >= 3) { kind = "injury"; reason = avail(bp).label.toLowerCase(); }
+          else if (avail(bp).sev >= 3) { kind = "injury"; reason = statusClause(bp.name, avail(bp)); }
           else if (now.p.prev && now.p.prev !== team) { kind = "trade"; reason = now.p.name + " arrived by trade from " + now.p.prev + " and is listed first on the depth chart"; }
           else {
             // Depth-chart change with no injury or trade. Committees (RB/TE) swap the snap lead often, so only flag
@@ -311,9 +366,10 @@
           var d = data.dvp[team][pos];
           if (d) rows.push({ team: team, n: d.n, fp: d.fp[i], l4: d.l4 ? d.l4[i] : null, yd: d.yd, td: d.td, tdt: d.tdt });
         }
-        ["fp", "yd", "td", "tdt"].forEach(function (key) {
-          var s = rows.slice().sort(function (a, b) { return b[key] - a[key]; }), rk = 0, prev = null;
-          s.forEach(function (r, j) { if (prev === null || r[key] !== prev) rk = j + 1; prev = r[key]; r["r_" + key] = rk; });
+        ["fp", "yd", "td", "tdt", "l4"].forEach(function (key) {
+          function val(r) { return r[key] == null ? -Infinity : r[key]; }   // missing last-4 data ranks last
+          var s = rows.slice().sort(function (a, b) { return val(b) - val(a); }), rk = 0, prev = null;
+          s.forEach(function (r, j) { if (prev === null || val(r) !== prev) rk = j + 1; prev = val(r); r["r_" + key] = rk; });
         });
         out[pos] = rows.sort(function (a, b) { return a.r_fp - b.r_fp || a.team.localeCompare(b.team); });
       });
@@ -467,6 +523,7 @@
       core: core, TEAM_NAMES: TEAM_NAMES, teams: teamList, UNIT: UNIT,
       baseline: baseline, avail: avail, injuryNews: injuryNews, roomOf: roomOf, outlook: outlook,
       fallout: fallout, starterChanges: starterChanges, teamChanges: teamChanges,
+      fullLabel: fullLabel, isEstablished: isEstablished, shortStatus: shortStatus, statusClause: statusClause,
       own: own, hasOwn: hasOwn, hiddenGems: hiddenGems, waiverBuzz: waiverBuzz,
       fantasySummary: fantasySummary, dvpTables: dvpTables,
       ctxOf: ctxOf, applyFilters: applyFilters, splitLine: splitLine, describeFilters: describeFilters,

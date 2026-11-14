@@ -34,6 +34,17 @@
     var byId = {};
     data.players.forEach(function (p) { byId[p.id] = p; });
 
+    /* Week status. A Thursday game makes week W "started" while most teams have not played it yet, so
+       FULLW is the latest week most teams have finished; lists like "top scorers" use it. */
+    var played = {}, scheduled = 0, gmCur = data.gm && data.gm[String(CUR)];
+    data.players.forEach(function (p) { p.rows.forEach(function (r) { if (r.season === CUR && r.week === W && r.tm) played[r.tm] = 1; }); });
+    if (gmCur) for (var tm in gmCur) { if (gmCur[tm] && gmCur[tm][W - 1]) scheduled++; }
+    var nPlayed = Object.keys(played).length;
+    var weekStatus = { week: W, teamsPlayed: nPlayed, teamsScheduled: scheduled || nPlayed,
+      partial: scheduled > 0 && nPlayed < 0.75 * scheduled };
+    var FULLW = weekStatus.partial ? W - 1 : W;
+    weekStatus.full = FULLW;
+
     function fp(row, fmt) {
       var std = v(row.fp), ppr = v(row.fpp);
       if (fmt === "std") return std;
@@ -350,11 +361,11 @@
       });
       return list.sort(function (a, b) { return b.ppo - a.ppo; }).slice(0, n);
     }
-    function topScorers(fmt, pos, n) {
-      var list = [];
+    function topScorers(fmt, pos, n, week) {
+      var list = [], wk = week || FULLW;
       data.players.forEach(function (p) {
         if (pos && p.pos !== pos) return;
-        var r = seasonRows(p).filter(function (x) { return x.week === W; })[0];
+        var r = seasonRows(p).filter(function (x) { return x.week === wk; })[0];
         if (r) list.push({ p: p, row: r, pts: fp(r, fmt) });
       });
       return list.sort(function (a, b) { return b.pts - a.pts; }).slice(0, n);
@@ -479,7 +490,7 @@
     }
 
     return {
-      data: data, byId: byId, FORMATS: FORMATS, YARD_LABEL: YARD_LABEL,
+      data: data, byId: byId, FORMATS: FORMATS, YARD_LABEL: YARD_LABEL, weekStatus: weekStatus, FULLW: FULLW,
       sample: sample, sinceRows: sinceRows, statLine: statLine, fp: fp, seasonRows: seasonRows, weekLog: weekLog, matchup: matchup, trendGroups: trendGroups, chips: chips,
       summary: summary, headToHead: headToHead, risers: risers, efficiency: efficiency, topScorers: topScorers,
       fallout: fallout, dvpTable: dvpTable, hasSleeper: hasSleeper, hasBuzz: hasBuzz, playerNews: playerNews, waiverMentions: waiverMentions, buzzList: buzzList, waiverArticles: waiverArticles, buzzPlayers: buzzPlayers, slCount: slCount, slList: slList, recentMetrics: recentMetrics, search: search, avg: avg, r1: r1, pct: pct, ordinal: ordinal,

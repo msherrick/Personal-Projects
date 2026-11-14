@@ -31,7 +31,7 @@ const hasBz = vm.runInContext("!!(DATA.buzz && DATA.buzz.items)", ctx);
 if (hasBz) {
   vm.runInContext(`NFLApp.state.apos='ALL'; NFLApp.state.tab='adds'; NFLApp.render();`, ctx);
   const a = els.view.innerHTML;
-  console.log("Buzz in data: true | adds tab:", a.includes("Waiver buzz") ? "Waiver buzz" : "MISSING", a.includes("Recent waiver articles") ? "articles" : "MISSING articles", a.includes("Not working: Example broken feed") ? "feed status" : "MISSING feed status", /href="javascript/.test(a) ? "UNSAFE LINK" : "links safe");
+  console.log("Buzz in data: true | adds tab:", a.includes("Waiver wire articles") ? "waiver articles" : "MISSING waiver articles", a.includes("not working: Example broken feed") ? "feed status" : "MISSING feed status", /href="javascript/.test(a) ? "UNSAFE LINK" : "links safe");
   vm.runInContext(`NFLApp.state.pid=DATA.players.find(p=>p.name==='Lamar Jackson').id; NFLApp.state.tab='player'; NFLApp.render();`, ctx);
   const pj = els.view.innerHTML;
   console.log("Lamar page:", pj.includes("In the news") && pj.includes("Lamar Jackson injury update") ? "headline shown" : "MISSING headline");
@@ -68,9 +68,9 @@ for (const hpos of ["QB", "RB", "WR", "TE"]) {
   vm.runInContext(`NFLApp.state.ptab='overview'; NFLApp.state.hpos='${hpos}'; NFLApp.state.tab='home'; NFLApp.render();`, ctx);
   if (/undefined|NaN/.test(els.view.innerHTML + els.movers.innerHTML) || !els.movers.innerHTML.includes("Scoring up")) checks.push("home movers " + hpos + " bad output");
 }
-for (const wsort of ["articles", "recent", "adds"]) for (const wown of ["all", "u50"]) {
-  vm.runInContext(`NFLApp.state.apos='ALL'; NFLApp.state.wsort='${wsort}'; NFLApp.state.wown='${wown}'; NFLApp.state.tab='adds'; NFLApp.render();`, ctx);
-  if (/undefined|NaN/.test(els.view.innerHTML)) checks.push("adds " + wsort + "/" + wown + " bad output");
+for (const apos of ["ALL", "QB", "RB", "WR", "TE"]) {
+  vm.runInContext(`NFLApp.state.apos='${apos}'; NFLApp.state.tab='adds'; NFLApp.render();`, ctx);
+  if (/undefined|NaN/.test(els.view.innerHTML)) checks.push("adds " + apos + " bad output");
 }
 vm.runInContext(`NFLApp.state.tab='matchups'; NFLApp.render();`, ctx);
 if ((els.view.innerHTML.match(/Defense stats vs/g) || []).length !== 4) checks.push("matchups: expected 4 tables");
