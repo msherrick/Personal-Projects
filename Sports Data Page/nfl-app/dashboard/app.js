@@ -31,6 +31,9 @@
   function pc(x) { return x == null || isNaN(x) ? "–" : Math.round(x * 100) + "%"; }
   function sgn(x, d) { if (x == null) return "–"; var s = x > 0 ? "+" : x < 0 ? "−" : ""; return s + Math.abs(x).toFixed(d == null ? 1 : d); }
   function sumKey(rows, k) { var s = 0; rows.forEach(function (r) { s += r[k] || 0; }); return s; }
+  /* Short panel notes with the details behind an ⓘ (hover on desktop, tap on phones). `more` is plain text. */
+  function info(more) { return more ? ' <button class="info" type="button" aria-label="More info" data-tip="' + esc(more) + '">i</button>' : ""; }
+  function note(short, more, cls) { return '<p class="note' + (cls ? " " + cls : "") + '">' + short + info(more) + "</p>"; }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
   function fmtLabel() { return FORMATS[state.fmt]; }
@@ -50,7 +53,8 @@
     return '<span class="av ' + (cls || "") + '" aria-hidden="true">' + esc(initials(p.name)) +
       (p.head ? '<img alt="" loading="lazy" decoding="async" src="' + esc(headUrl(p.head, px)) + '">' : "") + "</span>";
   }
-  function who(p) { return '<span class="nm">' + esc(p.name) + ' <span class="sub">' + p.pos + " · " + p.team + "</span></span>"; }
+  function posTxt(pos) { return pos === "DST" ? "D/ST" : pos; }
+  function who(p) { return '<span class="nm">' + esc(p.name) + ' <span class="sub">' + posTxt(p.pos) + " · " + p.team + "</span></span>"; }
   function playerRow(p, vals) {
     return '<li><button class="rowbtn" data-open="' + esc(p.id) + '">' + avatar(p) + who(p) + '<span class="vals">' + vals + "</span></button></li>";
   }
@@ -113,6 +117,16 @@
       tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
     });
     document.addEventListener("scroll", function () { tip.hidden = true; }, true);
+    // Phones have no hover: tapping an ⓘ shows its text under the button; tapping anywhere else hides it.
+    document.addEventListener("click", function (e) {
+      var b = e.target && e.target.closest ? e.target.closest(".info") : null;
+      if (!b) { tip.hidden = true; return; }
+      tip.innerHTML = b.getAttribute("data-tip");
+      tip.hidden = false;
+      var r = b.getBoundingClientRect(), w = tip.offsetWidth;
+      tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left - w / 2 + r.width / 2)) + "px";
+      tip.style.top = (r.bottom + 6) + "px";
+    });
   }
 
   /* ---------- charts ---------- */
@@ -372,7 +386,7 @@
     });
     h += "</tbody></table></div>";
     var when = pm.fetched ? new Date(pm.fetched).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
-    h += '<p class="note">"Last 5" and "Last 10" count his last games played, across seasons; the ' + CUR + " column is this season. Each shows how many times he went <b>over</b> today's line. Green means over in 60% or more, red 40% or less. Lines as of " + esc(when) + "; they move until kickoff. For information only.</p>";
+    h += note("Times he went <b>over</b> today's line. Lines as of " + esc(when) + ".", '"Last 5" and "Last 10" are his last games played, across seasons; the ' + CUR + " column is this season. Green = over in 60% or more, red = 40% or less. Lines move until kickoff. For information only.");
     return h;
   }
 
@@ -427,17 +441,100 @@
     listed.sort(function (a, b) { return a.sl.o - b.sl.o; });
     h += p.pos === "WR" ? wrGridHtml(p, listed) : '<div class="tablewrap"><table class="dc">' + head + "<tbody>" + listed.map(row).join("") + "</tbody></table></div>";
     var off = mates.filter(function (q) { return listed.indexOf(q) < 0 && q.rstatus === "ACT"; });
-    h += '<p class="note">' + (p.pos === "WR" ? "Each row is a receiver spot, with the starter first. The WR number is Sleeper's order across the whole receiver room" : "Order as Sleeper lists it") + ". Injured players keep their spot on the chart, so check their status. Only players tracked in this dashboard are shown" +
-      (off.length ? "; not on Sleeper's chart: " + off.map(function (q) { return esc(q.name); }).join(", ") : "") + ".</p></section>";
+    h += '<p class="note">Injured players keep their spot, so check status.' + info((p.pos === "WR" ? "Each row is a receiver spot, starter first. The WR number is Sleeper's order across the whole receiver room. " : "Order as Sleeper lists it. ") + "Only players tracked in this dashboard are shown" +
+      (off.length ? "; not on Sleeper's chart: " + off.map(function (q) { return q.name; }).join(", ") : "") + ".") + "</p></section>";
+    return h;
+  }
+  /* ---------- kicker and D/ST pages ----------
+     Same header as other players, then: season stat strip, this week's matchup, game log, and games vs the next opponent. */
+  var SPECIAL_COLS = {
+    K: [["FG", function (r) { return f0(r.fgm) + "/" + f0(r.fga); }, function (rs) { return f0(sumKey(rs, "fgm")) + "/" + f0(sumKey(rs, "fga")); }],
+      ["0-39", function (r) { return f0(r.fg39); }, function (rs) { return f0(sumKey(rs, "fg39")); }],
+      ["40-49", function (r) { return f0(r.fg40); }, function (rs) { return f0(sumKey(rs, "fg40")); }],
+      ["50+", function (r) { return f0(r.fg50); }, function (rs) { return f0(sumKey(rs, "fg50")); }],
+      ["Long", function (r) { return r.lng ? f0(r.lng) : "–"; }, function (rs) { var m = Math.max.apply(null, rs.map(function (r) { return r.lng || 0; })); return m ? f0(m) : "–"; }],
+      ["XP", function (r) { return f0(r.xpm) + "/" + f0(r.xpa); }, function (rs) { return f0(sumKey(rs, "xpm")) + "/" + f0(sumKey(rs, "xpa")); }]],
+    DST: [["Sacks", function (r) { return f0(r.sk); }, function (rs) { return f0(sumKey(rs, "sk")); }],
+      ["INT", function (r) { return f0(r.dint); }, function (rs) { return f0(sumKey(rs, "dint")); }],
+      ["Fum rec", function (r) { return f0(r.fr); }, function (rs) { return f0(sumKey(rs, "fr")); }],
+      ["TD", function (r) { return f0((r.dtd || 0) + (r.sttd || 0)); }, function (rs) { return f0(sumKey(rs, "dtd") + sumKey(rs, "sttd")); }],
+      ["Safety", function (r) { return f0(r.sf); }, function (rs) { return f0(sumKey(rs, "sf")); }],
+      ["Blocks", function (r) { return f0(r.blk); }, function (rs) { return f0(sumKey(rs, "blk")); }],
+      ["Pts allowed", function (r) { return f0(r.pa); }, function (rs) { return f1(sumKey(rs, "pa") / rs.length) + " avg"; }],
+      ["Yds allowed", function (r) { return r.yda == null ? "–" : f0(r.yda); }, function (rs) { return f0(sumKey(rs, "yda") / rs.length) + " avg"; }]]
+  };
+  function specialLog(p, entries, withSeason) {
+    var cols = SPECIAL_COLS[p.pos], played = entries.filter(function (e) { return e.kind === "played"; }).map(function (e) { return e.row; });
+    var h = "<table><thead><tr>" + (withSeason ? "<th>Yr</th>" : "") + "<th>Wk</th><th>Opp</th>" + cols.map(function (c) { return "<th>" + c[0] + "</th>"; }).join("") + "<th>Pts</th></tr></thead><tbody>";
+    entries.forEach(function (e) {
+      h += '<tr class="' + (e.kind === "played" ? "" : e.kind) + '">' + (withSeason ? "<td>" + (e.row ? e.row.season : "") + "</td>" : "") + "<td>" + e.week + "</td>";
+      if (e.kind === "bye") { h += '<td>BYE</td><td colspan="' + (cols.length + 1) + '"></td></tr>'; return; }
+      if (!e.row || e.kind === "dnp") { h += "<td>" + oppLabel(e) + '</td><td colspan="' + (cols.length + 1) + '" class="muted">Did not play</td></tr>'; return; }
+      h += "<td>" + oppLabel(e) + "</td>" + cols.map(function (c) { return "<td>" + c[1](e.row) + "</td>"; }).join("") + '<td class="strong">' + f1(e.row.fp) + "</td></tr>";
+    });
+    if (played.length) {
+      h += '<tr class="total"><td colspan="' + (withSeason ? 3 : 2) + '">Total · ' + gamesTxt(played.length) + "</td>" + cols.map(function (c) { return "<td>" + c[2](played) + "</td>"; }).join("") +
+        '<td class="strong">' + f1(sumKey(played, "fp")) + "</td></tr>";
+      h += '<tr class="total"><td colspan="' + (withSeason ? 3 : 2) + '">Per game</td>' + cols.map(function () { return "<td></td>"; }).join("") + '<td class="strong">' + f1(sumKey(played, "fp") / played.length) + "</td></tr>";
+    }
+    return h + "</tbody></table>";
+  }
+  function specialHtml(p, m) {
+    var rows = core.seasonRows(p, CUR), nx = p.next, isK = p.pos === "K", h = "";
+    var ppg = rows.length ? sumKey(rows, "fp") / rows.length : null, l3r = rows.slice(-3), l3 = l3r.length ? sumKey(l3r, "fp") / l3r.length : null;
+    if (rows.length) {
+      h += '<section class="kpis">' + kpi("Points / game", f1(ppg), "Last 3: " + f1(l3));
+      if (isK) {
+        var fgm = sumKey(rows, "fgm"), fga = sumKey(rows, "fga");
+        h += kpi("Field goals", f0(fgm) + "/" + f0(fga), fga ? pc(fgm / fga) + " made" : "") + kpi("50+ yard FGs", f0(sumKey(rows, "fg50")), "Long " + f0(Math.max.apply(null, rows.map(function (r) { return r.lng || 0; })))) +
+          kpi("Extra points", f0(sumKey(rows, "xpm")) + "/" + f0(sumKey(rows, "xpa")), "Per game " + f1(sumKey(rows, "xpm") / rows.length));
+      } else {
+        h += kpi("Sacks / game", f1(sumKey(rows, "sk") / rows.length), f0(sumKey(rows, "sk")) + " this season") + kpi("Takeaways / game", f1((sumKey(rows, "dint") + sumKey(rows, "fr")) / rows.length), f0(sumKey(rows, "dint")) + " INT · " + f0(sumKey(rows, "fr")) + " fumbles") +
+          kpi("Points allowed / game", f1(sumKey(rows, "pa") / rows.length), f0(sumKey(rows, "dtd") + sumKey(rows, "sttd")) + " defensive or return TDs");
+      }
+      h += "</section>";
+    }
+    // This week: matchup rank, Vegas total, recent form.
+    var b = [];
+    if (nx && !nx.bye) {
+      if (m) b.push({ tone: m.tier === "Favorable" ? "up" : m.tier === "Tough" ? "down" : "flat", text: isK
+        ? nx.opp + " allows " + f1(m.allowed) + " kicker points per game, the " + core.ordinal(m.rank) + " most"
+        : nx.opp + "'s offense gives up " + f1(m.allowed) + " D/ST points per game, the " + core.ordinal(m.rank) + " most" });
+      if (isK && nx.implied != null) b.push({ tone: nx.implied >= 25 ? "up" : nx.implied <= 19 ? "down" : "flat", text: p.team + " implied to score " + f1(nx.implied) + " points (Vegas); more points usually means more kicks" });
+      if (!isK && nx.implied != null && nx.total != null) { var oi = nx.total - nx.implied; b.push({ tone: oi <= 19 ? "up" : oi >= 25 ? "down" : "flat", text: nx.opp + " implied to score " + f1(oi) + " points (Vegas); fewer points allowed means more D/ST points" }); }
+    } else b.push({ tone: "flat", text: nx && nx.bye ? "Bye this week" : "No game scheduled" });
+    if (l3 != null && rows.length >= 4) b.push({ tone: l3 > ppg + 1 ? "up" : l3 < ppg - 1 ? "down" : "flat", text: f1(l3) + " points per game over the last 3, vs " + f1(ppg) + " for the season" });
+    h += '<section class="panel"><h3>This week' + (nx && !nx.bye ? ' <span class="hint">' + (nx.home ? "vs " : "at ") + esc(nx.opp) + "</span>" : "") + '</h3><ul class="bul">' + b.map(function (x) { return '<li class="' + x.tone + '">' + esc(x.text) + "</li>"; }).join("") + "</ul>" +
+      note("Sleeper default " + (isK ? "kicker" : "D/ST") + " scoring, same in every format.", isK ? "FG 0-39 yards = 3, 40-49 = 4, 50+ = 5, extra point = 1, missed FG or extra point = -1." : "Sack 1, interception 2, fumble recovery 2, safety 2, blocked kick 2, defensive or return TD 6, plus points allowed: 0 = 10, 1-6 = 7, 7-13 = 4, 14-20 = 1, 21-27 = 0, 28-34 = -1, 35+ = -4.") + "</section>";
+    // Game log with a points chart.
+    var seasons = SEASONS.slice().reverse().filter(function (y) { return core.seasonRows(p, y).length; });
+    if (seasons.indexOf(state.logSeason) < 0) state.logSeason = seasons[0] || CUR;
+    h += '<section class="panel"><div class="panelhead"><h3>Game log</h3>' + seg("season", seasons.map(function (y) { return [y, y]; }), state.logSeason, "Season") + "</div>";
+    var wl = core.weekLog(p, state.logSeason);
+    if (wl.some(function (e) { return e.kind === "played"; })) {
+      var items = wl.map(function (e) {
+        return { label: "W" + e.week, val: e.kind === "bye" ? null : (e.row ? e.row.fp : 0), dnp: e.kind === "dnp", tip: "Week " + e.week + (e.row ? "<br><b>" + f1(e.row.fp) + "</b> pts" : e.kind === "bye" ? "<br>Bye" : "<br>Did not play") };
+      });
+      var pl = wl.filter(function (e) { return e.kind === "played"; });
+      h += '<h4 class="subhead first">Fantasy points by week <span class="hint">dashed line = average</span></h4><div class="chart">' + barChart(items, core.avg(pl.map(function (e) { return e.row.fp; })), "Fantasy points by week") + "</div>";
+      h += '<div class="tablewrap">' + specialLog(p, wl.slice().reverse(), false) + "</div>";
+    } else h += '<p class="muted">No games in the data for this season.</p>';
+    h += "</section>";
+    if (nx && !nx.bye) {
+      var vs = p.rows.filter(function (r) { return r.opp === nx.opp; }).slice().reverse();
+      h += '<section class="panel"><h3>Against ' + esc(nx.opp) + ' <span class="hint">since ' + SEASONS[0] + "</span></h3>" + (vs.length
+        ? '<div class="tablewrap">' + specialLog(p, vs.map(function (r) { return { week: r.week, kind: "played", row: r, opp: r.opp }; }), true) + "</div>"
+        : '<p class="muted">No games against ' + esc(nx.opp) + " in the data since " + SEASONS[0] + ".</p>") + "</section>";
+    }
     return h;
   }
   function renderPlayer() {
     var p = player(state.pid) || DATA.players[0];
     var curRows = core.seasonRows(p, CUR), m = core.matchup(p, state.fmt), nx = p.next;
-    var h = '<section class="phead">' + avatar(p, "lg") + '<div class="pname"><h2>' + esc(p.name) + '</h2><p class="sub">' + esc(p.pos) + " · " + esc(p.team) +
+    var h = '<section class="phead">' + avatar(p, "lg") + '<div class="pname"><h2>' + esc(p.name) + '</h2><p class="sub">' + esc(posTxt(p.pos)) + " · " + esc(p.team) +
       (p.sl && p.sl.o ? " · " + esc(p.pos) + p.sl.o + " on depth chart" : "") + '</p><div class="pills">';
-    var ap = availPill(p);
-    h += ap || '<span class="pill up">No injury designation</span>';
+    var ap = p.pos === "DST" ? "" : availPill(p);
+    h += ap || (p.pos === "DST" ? "" : '<span class="pill up">No injury designation</span>');
     if (p.rstatus && p.rstatus !== "ACT" && !(A.avail(p).sev >= 3)) h += '<span class="pill flat">Roster: ' + esc(p.rstatus === "RES" ? "reserve list" : p.rstatus) + "</span>";
     var ow = A.own(p);
     if (ow != null) h += '<span class="pill flat" data-tip="Share of ESPN fantasy leagues that roster him' + (p.own.c != null ? "; " + sgn(p.own.c) + " points this week" : "") + '">' + ownPct(ow) + "% rostered (ESPN)" + (p.own.s != null ? " · " + ownPct(p.own.s) + "% started" : "") + "</span>";
@@ -450,6 +547,7 @@
       h += '<p class="lines">' + (nx.spread == null ? "" : "Spread " + sgn(nx.spread) + " · ") + (nx.total == null ? "" : "Total " + f1(nx.total) + " · ") + (nx.implied == null ? "" : "Team implied " + f1(nx.implied)) + "</p>";
     }
     h += "</div></section>";
+    if (p.pos === "K" || p.pos === "DST") { $("view").innerHTML = h + specialHtml(p, m); return; }
     // Season stat strip right under the header, as on ESPN and Sleeper player pages.
     if (curRows.length) {
       var s = core.summary(p, state.fmt, "season"), l3 = core.summary(p, state.fmt, "last3");
@@ -484,7 +582,7 @@
       var isPts = state.logView === "pts";
       if (!isPts) {
         h += '<div class="tablewrap">' + boxTable(p, wl.slice().reverse(), false) + "</div>";
-        h += '<p class="note">Box score for every week of the season; greyed rows are games he missed. Charts are in the Fantasy points view.</p></section>';
+        h += note("Greyed rows are games he missed.", "Charts are in the Fantasy points view.") + "</section>";
         h += againstHtml(p, nx);
         $("view").innerHTML = h;
         return;
@@ -507,7 +605,7 @@
         h += '<h4 class="subhead">Usage by week</h4><div class="legend">' + ser.map(function (x, k) { return '<span><i class="sw s' + k + '"></i>' + esc(x.name) + "</span>"; }).join("") + '</div><div class="chart">' + lineChart(wl.map(function (e) { return "W" + e.week; }), ser) + "</div>";
       }
       h += '<div class="tablewrap">' + logTable(p, wl.slice().reverse(), state.logView, false) + "</div>";
-      h += '<p class="note">Every week of the season is listed. Greyed rows are games he did not play (counted as 0 here, left out of averages); BYE is the team\'s week off.</p>';
+      h += note("Greyed rows are games he missed; BYE is the team's week off.", "Missed games count as 0 in the chart and are left out of averages.");
     } else h += '<p class="muted">No games in the data for this player.</p>';
     h += "</section>";
     $("view").innerHTML = h + againstHtml(p, nx);
@@ -541,7 +639,7 @@
   function splitsHtml(p) {
     state.splitPos = p.pos;
     var seasons = [["", "Since " + (CUR - 2)], [String(CUR), String(CUR)], [String(CUR - 1), String(CUR - 1)], [String(CUR - 2), String(CUR - 2)]];
-    var h = '<section class="panel"><h3>Ask about ' + esc(p.name) + '</h3><p class="note">Type a question in plain words, like StatMuse. It understands opponents, home/away, primetime, division games, favorite/underdog, dome/outdoors, wins/losses, top-10 or bottom-10 defenses, "without" or "with" a teammate, a season and "last N games". Combine them freely.</p>';
+    var h = '<section class="panel"><h3>Ask about ' + esc(p.name) + '</h3>' + note("Ask in plain words, like StatMuse.", 'Understands opponents, home/away, primetime, division games, favorite/underdog, dome/outdoors, wins/losses, top-10 or bottom-10 defenses, "without" or "with" a teammate, a season and "last N games". Combine them freely.');
     h += '<div class="picker"><label for="splitq" class="sr">Stat question</label><input id="splitq" type="search" autocomplete="off" placeholder="e.g. home games vs ' + esc(p.next && p.next.opp || "KC") + ' in primetime" value="' + esc(state.splitQ) + '"></div>';
     h += '<div class="quick">' + splitExamples(p).map(function (q) { return '<button class="tag" data-sq="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + '</div><div id="splitres"></div></section>';
     h += '<section class="panel"><div class="panelhead"><h3>Standard splits</h3>' + seg("sseason", seasons, state.splitSeason, "Season") + "</div>";
@@ -606,7 +704,7 @@
     g.down.forEach(function (f) {
       var p = f.p;
       var why = esc(A.fullLabel(f.av)) + ' <span class="sub">· ' + esc(f.av.src) + "</span>. Averaged " + f1(f.avgPts) + " pts and " + pc(f.base.snap) + " of snaps while healthy";
-      h += '<div class="fo-down">' + avatar(p) + '<div><p class="fo-name"><button class="link" data-open="' + esc(p.id) + '">' + esc(p.name) + '</button> <span class="sub">' + p.pos + " · " + p.team + "</span>" + ownBadge(p) + '</p><p class="why">' + why + "</p>" + newsLine(p) + "</div></div>";
+      h += '<div class="fo-down">' + avatar(p) + '<div><p class="fo-name"><button class="link" data-open="' + esc(p.id) + '">' + esc(p.name) + '</button> <span class="sub">' + posTxt(p.pos) + " · " + p.team + "</span>" + ownBadge(p) + '</p><p class="why">' + why + "</p>" + newsLine(p) + "</div></div>";
     });
     h += '</div><div class="fo-next"><p class="label">' + (g.next.length ? "Next up at " + g.pos + " for " + g.team : "No clear replacement in the data") + "</p>";
     g.next.forEach(function (n) {
@@ -630,17 +728,16 @@
       (s.evidence ? '<p class="why">Headline: <a class="hl" href="' + esc(safeUrl(s.evidence.u)) + '" target="_blank" rel="noopener noreferrer">' + esc(s.evidence.t) + "</a></p>" : "") + "</div></div></li>";
   }
   function scoringVals(x) {
-    var tw = teamWin(x.p, 3), small = tw.gp < 3 || x.g - x.k < 2;
-    return "<b>" + f1(x.fpRecent) + "</b> PPG <i>(" + sgn(x.dFp) + ")</i>" + ownBadge(x.p) + '<br><span class="sub">' + f1(x.totRecent) + " pts over his last " + x.k + " games · played " + tw.gp + " of team's last " + tw.n +
-      (small ? ' · <span class="warn" data-tip="Few games in this window or before it, so the change may be noise">small sample</span>' : "") + "</span>";
+    var tw = teamWin(x.p, 3);
+    return "<b>" + f1(x.fpRecent) + "</b> PPG <i>(" + sgn(x.dFp) + ")</i>" + ownBadge(x.p) + '<br><span class="sub">' + f1(x.totRecent) + " pts over his last " + x.k + " games · played " + tw.gp + " of team's last " + tw.n + "</span>";
   }
   var HPOS = ["QB", "RB", "WR", "TE"], rotTimer = null;
   function stopRot() { if (rotTimer) { clearInterval(rotTimer); rotTimer = null; } }
   function homeMovers() {
     var pos = state.hpos, r = core.risers(state.fmt, pos, 5, "last3"), unit = A.UNIT[pos];
-    var h = '<div class="grid2"><div><h4 class="subhead first">Scoring up</h4><p class="note">' + esc(fmtLabel()) + " points per game in his last 3 games vs. earlier this season, with total points and games played so a return from injury stands out.</p><ol class=\"rank\">" +
+    var h = '<div class="grid2"><div><h4 class="subhead first">Scoring up</h4>' + note(esc(fmtLabel()) + " PPG, last 3 games vs. earlier.", "Shows total points and games played too, so a player back from injury stands out.") + '<ol class="rank">' +
       (r.production.map(function (x) { return playerRow(x.p, scoringVals(x)); }).join("") || '<li class="muted pad">Nobody meets the minimums.</li>') + "</ol></div>";
-    h += '<div><h4 class="subhead first">Workload up</h4><p class="note">' + esc(unit.charAt(0).toUpperCase() + unit.slice(1)) + " per game, last 3 games vs. earlier this season.</p><ol class=\"rank\">" +
+    h += '<div><h4 class="subhead first">Workload up</h4>' + note(esc(unit.charAt(0).toUpperCase() + unit.slice(1)) + " per game, last 3 vs. earlier.") + '<ol class="rank">' +
       (r.opportunity.map(function (x) { return playerRow(x.p, riseVals(x, 3) + ownBadge(x.p)); }).join("") || '<li class="muted pad">Nobody meets the minimums.</li>') + "</ol></div></div>";
     return h;
   }
@@ -676,16 +773,16 @@
   function renderHome() {
     var fo = groupFallout(A.fallout(state.fmt).out).slice(0, 3), sc = A.starterChanges().slice(0, 4);
     var quick = core.topScorers(state.fmt, null, 4);
-    var h = '<section class="hero"><h1>Look up any player</h1><p class="lede">Trends, matchups and usage for every QB, RB, WR and TE, through Week ' + FW + ".</p>";
+    var h = '<section class="hero"><h1>Look up any player</h1><p class="lede">Trends, matchups and usage for every QB, RB, WR, TE, kicker and defense, through Week ' + FW + ".</p>";
     h += '<div class="herosearch"><label for="hq" class="sr">Search players</label><input id="hq" type="search" placeholder="Search by name, like Jahmyr Gibbs" autocomplete="off"><ul id="hresults" class="results" hidden></ul></div>';
     h += '<div class="quick"><span class="sub">Top scorers in Week ' + FW + ':</span>' + quick.map(function (x) { return '<button class="tag" data-open="' + esc(x.p.id) + '">' + avatar(x.p, "sm") + esc(x.p.name) + "</button>"; }).join("") + "</div></section>";
-    h += '<section class="panel" id="moverspanel"><div class="panelhead"><h3>Movers <span class="hint">' + (state.hlock ? "pick a position" : "this and the two tables below rotate together every few seconds; hover to pause, click a position to stay on it") + '</span></h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><div id="movers"></div></section>';
+    h += '<section class="panel" id="moverspanel"><div class="panelhead"><h3>Movers <span class="hint">' + (state.hlock ? "" : "rotating by position · hover to pause") + '</span></h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><div id="movers"></div></section>';
     h += '<div class="grid2">';
-    h += '<section class="panel rotp"><div class="panelhead"><h3>Top scorers, Week ' + FW + '</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">' + esc(fmtLabel()) + ' points, <span class="hposlbl"></span> only. Badges show the share of ESPN leagues that roster him.</p><div id="hometop"></div></section>';
-    if (core.hasSleeper()) h += '<section class="panel rotp"><div class="panelhead"><h3>Most added on Sleeper</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">Last 24 hours, across Sleeper leagues, <span class="hposlbl"></span> only. <button class="link" data-tab="adds">See all adds</button></p><div id="homeadds"></div></section>';
+    h += '<section class="panel rotp"><div class="panelhead"><h3>Top scorers, Week ' + FW + '</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">' + esc(fmtLabel()) + ' points, <span class="hposlbl"></span> only.' + info("Badges show the share of ESPN leagues that roster him.") + '</p><div id="hometop"></div></section>';
+    if (core.hasSleeper()) h += '<section class="panel rotp"><div class="panelhead"><h3>Most added on Sleeper</h3><div class="seg hposseg" role="group" aria-label="Position"></div></div><p class="note">Last 24 hours, <span class="hposlbl"></span> only. <button class="link" data-tab="adds">See all</button></p><div id="homeadds"></div></section>';
     h += "</div>";
-    if (sc.length) h += '<section class="panel"><div class="panelhead"><h3>New starters</h3><button class="link" data-tab="risers">See all</button></div><p class="note">Players now listed first on their team\'s depth chart (Sleeper) because of an injury, a trade or a benching.</p><ul class="folist">' + sc.map(starterHtml).join("") + "</ul></section>";
-    h += '<section class="panel"><div class="panelhead"><h3>Injury watch</h3><button class="link" data-tab="risers">See all</button></div><p class="note">Starters who are out, on IR or left Week ' + WK + " early, and who is next up.</p>";
+    if (sc.length) h += '<section class="panel"><div class="panelhead"><h3>New starters</h3><button class="link" data-tab="risers">See all</button></div>' + note("Now first on their team's depth chart (Sleeper).", "Because of an injury, a trade or a benching.") + '<ul class="folist">' + sc.map(starterHtml).join("") + "</ul></section>";
+    h += '<section class="panel"><div class="panelhead"><h3>Injury watch</h3><button class="link" data-tab="risers">See all</button></div>' + note("Starters who are out or hurt, and who's next up.");
     h += fo.length ? '<ul class="folist">' + fo.map(falloutHtml).join("") + "</ul>" : '<p class="muted">No starters flagged.</p>';
     h += "</section>";
     $("view").innerHTML = h;
@@ -714,7 +811,7 @@
   function cmpHead(ps, first) {
     return '<thead><tr><th>' + esc(first) + "</th>" + ps.map(function (p) {
       return '<th class="cmphead"><button class="x" data-remove="' + esc(p.id) + '" title="Remove ' + esc(p.name) + '" aria-label="Remove ' + esc(p.name) + '">×</button>' + avatar(p, "xl") +
-        '<button class="link" data-open="' + esc(p.id) + '">' + esc(p.name) + '</button><br><span class="sub">' + p.pos + " · " + p.team + "</span>" + ownBadge(p) + "</th>";
+        '<button class="link" data-open="' + esc(p.id) + '">' + esc(p.name) + '</button><br><span class="sub">' + posTxt(p.pos) + " · " + p.team + "</span>" + ownBadge(p) + "</th>";
     }).join("") + "</tr></thead>";
   }
   // The second argument core.sample expects: games for "last N", the first season for "since".
@@ -779,7 +876,7 @@
       if (rowsHtml) h += '<tr class="sect"><th colspan="' + (ps.length + 1) + '">' + sec[0] + "</th></tr>" + rowsHtml;
     });
     h += "</tbody></table></div>";
-    h += '<p class="note">Sample: ' + esc(scopeText()) + ". Totals and rates come from the games played in that sample (for example, yards per carry is rushing yards divided by carries). The best value in each row is highlighted; for interceptions and fumbles lost, the lowest. Sacks, QB rating and advanced metrics are not included.</p>";
+    h += note("Sample: " + esc(scopeText()) + ". Best value in each row is highlighted.", "Totals and rates come from the games played in the sample (yards per carry = rushing yards / carries). For interceptions and fumbles lost, the lowest is best. Sacks, QB rating and advanced metrics are not included.");
     return h;
   }
   function renderCmpBody() {
@@ -809,7 +906,7 @@
       var mm = core.matchup(p, state.fmt), nx = p.next;
       return "<td>" + (nx && !nx.bye ? (nx.home ? "vs " : "at ") + esc(nx.opp) + (mm ? " · " + esc(mm.tier) : "") : "Bye / none") + "</td>";
     }).join("") + "</tr></tbody></table></div>";
-    h += '<p class="note">Sample: ' + esc(scopeText()) + ". Counts games played only; missed games are not included. The best value in each row is highlighted (for week-to-week swing, the lowest, meaning the steadiest). Workload = carries + targets (QBs: pass attempts + carries). Box-score stats are in the Stats view.</p>";
+    h += note("Sample: " + esc(scopeText()) + ". Best value in each row is highlighted.", "Games played only; missed games are left out. For week-to-week swing the lowest (steadiest) is best. Workload = carries + targets (QBs: pass attempts + carries). Box-score stats are in the Stats view.");
     if (ps.length === 2) {
       var hh = core.headToHead(ps[0], ps[1], state.fmt, scope, n);
       h += '<h4 class="subhead">Head to head, weeks both played</h4>';
@@ -824,7 +921,7 @@
     q.addEventListener("input", function () {
       var r = core.search(q.value, 7);
       res.hidden = !r.length;
-      res.innerHTML = r.map(function (p) { return '<li><button data-add="' + esc(p.id) + '">' + avatar(p, "sm") + esc(p.name) + ' <span class="sub">' + p.pos + " · " + p.team + "</span></button></li>"; }).join("");
+      res.innerHTML = r.map(function (p) { return '<li><button data-add="' + esc(p.id) + '">' + avatar(p, "sm") + esc(p.name) + ' <span class="sub">' + posTxt(p.pos) + " · " + p.team + "</span></button></li>"; }).join("");
     });
     // Enter adds the top result (the only one, or the closest match when several show).
     q.addEventListener("keydown", function (e) {
@@ -843,8 +940,12 @@
     return ' style="background: color-mix(in srgb, var(--down-bg) ' + mix + '%, var(--up-bg))"';
   }
   /* Sortable columns: [key, header, rank key]. A rank key means "1st to last" uses that rank. */
+  /* [key, header, rank key, number format] */
+  var DVP_POS = ["QB", "RB", "WR", "TE", "K", "DST"], POS_LABEL = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", K: "K", DST: "D/ST" };
   function dvpCols(P) {
-    return [["team", "Defense"], ["n", "G"], ["fp", "Fantasy pts / g", "r_fp"], ["yd", core.YARD_LABEL[P] + " / g", "r_yd"], ["td", "TDs / g", "r_td"], ["tdt", "Total TDs", "r_tdt"], ["l4", "Last 4 games pts / g", "r_l4"]];
+    if (P === "K") return [["team", "Defense"], ["n", "G"], ["fp", "Kicker pts / g", "r_fp", f1], ["fgm", "FGs made / g", "r_fgm", f1], ["fga", "FG attempts / g", "r_fga", f1], ["xpm", "Extra points / g", "r_xpm", f1], ["l4", "Last 4 games pts / g", "r_l4", f1]];
+    if (P === "DST") return [["team", "Offense"], ["n", "G"], ["fp", "D/ST pts / g", "r_fp", f1], ["pts", "Points scored / g", "r_pts", f1], ["sk", "Sacks allowed / g", "r_sk", f1], ["to", "Turnovers / g", "r_to", f1], ["l4", "Last 4 games pts / g", "r_l4", f1]];
+    return [["team", "Defense"], ["n", "G"], ["fp", "Fantasy pts / g", "r_fp", f1], ["yd", core.YARD_LABEL[P] + " / g", "r_yd", f1], ["td", "TDs / g", "r_td", f2], ["tdt", "Total TDs", "r_tdt", f0], ["l4", "Last 4 games pts / g", "r_l4", f1]];
   }
   // Click once: 1st to last (most allowed first; A to Z for teams). Twice: last to first. Three times: back to default.
   function dvpSorted(P, rows) {
@@ -862,7 +963,9 @@
   function dvpSection(P, rows) {
     var names = { QB: "quarterbacks", RB: "running backs", WR: "wide receivers", TE: "tight ends" };
     var n = rows.length, st = state.dsort[P], rkKey = st ? (dvpCols(P).filter(function (c) { return c[0] === st.key; })[0][2] || null) : "r_fp";
-    var h = '<h3>Defense stats vs ' + P + 's <span class="hint">opposing ' + names[P] + ", " + esc(fmtLabel()) + " scoring</span></h3>";
+    var h = P === "K" ? '<h3>Defense stats vs kickers <span class="hint">what each defense allows to opposing kickers</span></h3>'
+      : P === "DST" ? '<h3>Offenses vs D/ST <span class="hint">what defenses score against each offense; green = stream against them</span></h3>'
+      : '<h3>Defense stats vs ' + P + 's <span class="hint">opposing ' + names[P] + ", " + esc(fmtLabel()) + " scoring</span></h3>";
     h += '<div class="tablewrap dvpwrap"><table class="dvp heat"><thead><tr><th>#</th>' + dvpCols(P).map(function (c) {
       var on = st && st.key === c[0], arrow = on ? (st.dir === "asc" ? " ▲" : " ▼") : "";
       var label = on ? (st.dir === "asc" ? "sorted 1st to last" : "sorted last to first") : "not sorted";
@@ -871,17 +974,17 @@
     dvpSorted(P, rows).forEach(function (r, i) {
       var nx = nextByTeam[r.team];
       function cell(val, rk, fmt) { return "<td" + heat(rk, n) + '><b>' + fmt(val) + '</b> <span class="rk">' + core.ordinal(rk) + "</span></td>"; }
-      h += "<tr><td>" + (rkKey ? r[rkKey] : i + 1) + '</td><td class="strong">' + esc(r.team) + "</td><td>" + r.n + "</td>" + cell(r.fp, r.r_fp, f1) + cell(r.yd, r.r_yd, f1) + cell(r.td, r.r_td, f2) + cell(r.tdt, r.r_tdt, f0) +
-        (r.l4 == null ? "<td>–</td>" : cell(r.l4, r.r_l4, f1)) + "<td>" + (nx ? (nx.bye ? "Bye" : (nx.home ? "vs " : "at ") + esc(nx.opp)) : "–") + "</td></tr>";
+      h += "<tr><td>" + (rkKey ? r[rkKey] : i + 1) + '</td><td class="strong">' + esc(r.team) + "</td><td>" + r.n + "</td>" +
+        dvpCols(P).slice(2).map(function (c) { return r[c[0]] == null ? "<td>–</td>" : cell(r[c[0]], r[c[2]], c[3]); }).join("") + "<td>" + (nx ? (nx.bye ? "Bye" : (nx.home ? "vs " : "at ") + esc(nx.opp)) : "–") + "</td></tr>";
     });
     return h + "</tbody></table></div>";
   }
   function renderMatchups() {
     var T = A.dvpTables(state.fmt);
     var h = '<div class="stickybar"><h3>Defense vs position</h3><div class="seg" role="group" aria-label="Jump to position">' +
-      ["QB", "RB", "WR", "TE"].map(function (x) { return '<button class="segbtn" data-jump="dvp-' + x + '">' + x + "</button>"; }).join("") + "</div></div>";
-    h += '<p class="note wide">What each defense has allowed per game to opposing ' + "players at each position in " + CUR + ". Rank 1 gives up the most (best matchup, green); rank 32 gives up the least (toughest, red). Each column is ranked on its own. Click a column header to sort by it: once for 1st to last, again for last to first, a third time to go back to the default. Scroll inside a table to see all 32 teams.</p>";
-    ["QB", "RB", "WR", "TE"].forEach(function (P) { h += '<section class="panel" id="dvp-' + P + '">' + dvpSection(P, T[P]) + "</section>"; });
+      DVP_POS.map(function (x) { return '<button class="segbtn" data-jump="dvp-' + x + '">' + POS_LABEL[x] + "</button>"; }).join("") + "</div></div>";
+    h += note("Allowed per game in " + CUR + ". Green = easiest matchup, red = toughest. Click a header to sort.", "Rank 1 gives up the most; rank 32 the least. Each column is ranked on its own. Kickers and D/ST use Sleeper's default scoring in every format. In the D/ST table, fewer points scored ranks higher, since that helps your defense. Sorting: first click 1st to last, second click last to first, third click back to the default. Scroll inside a table to see all 32 teams.", "wide");
+    DVP_POS.forEach(function (P) { if (T[P] && T[P].length) h += '<section class="panel" id="dvp-' + P + '">' + dvpSection(P, T[P]) + "</section>"; });
     $("view").innerHTML = h;
   }
   function cycleDvpSort(spec) {
@@ -901,6 +1004,48 @@
     list.forEach(function (x) { var ad = addsTxt(x.p); h += playerRow(x.p, cols(x) + ownBadge(x.p) + (ad ? '<br><span class="sub">' + esc(ad) + "</span>" : "")); });
     return h + (list.length ? "" : '<li class="muted pad">Nobody meets the minimums.</li>') + "</ol></section>";
   }
+  /* Kickers and D/ST: points per game, last k games vs the games before (players with k + 2 or more games). */
+  function specialTrend(pos, k) {
+    var out = [];
+    DATA.players.forEach(function (p) {
+      if (p.pos !== pos || (pos === "K" && p.rstatus !== "ACT")) return;
+      var rows = core.seasonRows(p, CUR);
+      if (rows.length < k + 2) return;
+      var rec = rows.slice(-k), pri = rows.slice(0, -k);
+      var a = sumKey(rec, "fp") / rec.length, b = sumKey(pri, "fp") / pri.length;
+      out.push({ p: p, fpRecent: a, fpPrior: b, dFp: a - b });
+    });
+    return out;
+  }
+  function specialTrendHtml(pos, k, title, n, down) {
+    var list = specialTrend(pos, k).sort(function (a, b) { return down ? a.dFp - b.dFp : b.dFp - a.dFp; }).filter(function (x) { return down ? x.dFp < 0 : x.dFp > 0; }).slice(0, n);
+    return riserList(title, (k === 1 ? "Last game" : "Last 3 games") + " vs. earlier, points per game.", list, function (x) { return "<b>" + f1(x.fpRecent) + "</b> <i>(" + sgn(x.dFp) + " vs " + f1(x.fpPrior) + ")</i>"; });
+  }
+  /* Streaming picks: K or D/ST rostered in at most maxOwn% of ESPN leagues, ranked by next week's matchup
+     (what the opponent allows to the position) plus their own season scoring. */
+  function streamers(pos, n, maxOwn) {
+    var out = [];
+    DATA.players.forEach(function (p) {
+      if (p.pos !== pos || (pos === "K" && p.rstatus !== "ACT")) return;
+      var o = A.own(p), nx = p.next;
+      if (o == null || o > maxOwn || !nx || nx.bye) return;
+      var d = DATA.dvp[nx.opp] && DATA.dvp[nx.opp][pos], rows = core.seasonRows(p, CUR);
+      if (!d || rows.length < 3) return;
+      var ppg = sumKey(rows, "fp") / rows.length;
+      out.push({ p: p, nx: nx, allowed: d.fp[0], rank: d.rk[0], ppg: ppg, score: d.fp[0] + ppg });
+    });
+    return out.sort(function (a, b) { return b.score - a.score; }).slice(0, n);
+  }
+  function streamersHtml(pos, n) {
+    var list = streamers(pos, n, 50), label = pos === "K" ? "kicker" : "D/ST";
+    var h = '<section class="panel"><h3>Streaming ' + (pos === "K" ? "kickers" : "D/ST") + ' <span class="hint">Week ' + meta.next_week + "</span></h3>" +
+      note("Rostered in 50% or fewer ESPN leagues, ranked by matchup and season scoring.", "Score = what the next opponent allows to a " + label + " per game + his own points per game this season. Sleeper default scoring.") + '<ol class="rank">';
+    h += list.map(function (x) {
+      return playerRow(x.p, "<b>" + (x.nx.home ? "vs " : "at ") + esc(x.nx.opp) + "</b> · allows " + f1(x.allowed) + " (" + core.ordinal(x.rank) + ")" + ownBadge(x.p) +
+        '<br><span class="sub">' + f1(x.ppg) + " PPG this season" + (addsTxt(x.p) ? " · " + esc(addsTxt(x.p)) : "") + "</span>");
+    }).join("") || '<li class="muted pad">Nobody fits right now.</li>';
+    return h + "</ol></section>";
+  }
   function renderRisers() {
     var pos = state.rpos === "ALL" ? null : state.rpos, k = state.basis === "last1" ? 1 : 3;
     var r = core.risers(state.fmt, pos, 8, state.basis);
@@ -911,26 +1056,34 @@
     var basisText = k === 1 ? "his last game against his average in the games before it" : "his last 3 games against his games before that";
     var h = '<div class="stickybar"><h3>Risers and fallers</h3><div class="controls">' +
       seg("basis", [["last3", "Last 3 games"], ["last1", "Last game"]], state.basis, "Compare window") +
-      seg("rpos", ["ALL", "QB", "RB", "WR", "TE"].map(function (x) { return [x, x === "ALL" ? "All" : x]; }), state.rpos, "Position") + "</div></div>";
-    h += '<p class="note wide">Each list compares ' + basisText + ", through Week " + WK + ". Active players with " + (k + 2) + "+ games and real volume only. Fantasy add/drop rates are on the Adds &amp; drops tab.</p>";
+      seg("rpos", ["ALL", "QB", "RB", "WR", "TE", "K", "DST"].map(function (x) { return [x, x === "ALL" ? "All" : x === "DST" ? "D/ST" : x]; }), state.rpos, "Position") + "</div></div>";
+    if (pos === "K" || pos === "DST") {
+      // Kickers and defenses: scoring trends and next week's streaming options (no workload, snaps or depth-chart changes).
+      h += note("Comparing " + basisText.replace(/his /g, "their ") + ". Sleeper default scoring.");
+      h += '<div class="grid2">' + specialTrendHtml(pos, k, "Scoring up", 8, false) + specialTrendHtml(pos, k, "Cooling off", 8, true) + "</div>";
+      h += streamersHtml(pos, 8);
+      $("view").innerHTML = h;
+      return;
+    }
+    h += note("Comparing " + basisText + ".", "Through Week " + WK + ". Active players with " + (k + 2) + "+ games and real volume only. Add/drop counts are on the Adds & drops tab.", "wide");
 
-    h += '<section class="panel"><h3>New starters <span class="hint">injuries, trades, benchings, returns</span></h3><p class="note">Teams whose top player at a position last game is no longer listed first on the Sleeper depth chart. QB, RB and TE only; WR rotations are too fluid to call.</p>';
+    h += '<section class="panel"><h3>New starters <span class="hint">injuries, trades, benchings, returns</span></h3>' + note("A new name at the top of the Sleeper depth chart.", "Compares the team's top player at each position last game with today's depth chart. QB, RB and TE only; WR rotations are too fluid to call.");
     h += sc.length ? '<ul class="folist">' + sc.map(starterHtml).join("") + "</ul>" : '<p class="muted">No starter changes' + (pos ? " at " + pos : "") + ".</p>";
     h += "</section>";
-    h += '<section class="panel"><h3>Out, on IR or left early <span class="hint">Week ' + meta.next_week + '</span></h3><p class="note">Regular starters ruled Out, Doubtful, on injured reserve or a reserve list (Sleeper and the injury report), or who played under 40% of their usual snaps in Week ' + WK + ". Next up = healthy teammates at the same position, by depth chart then recent snaps.</p>";
+    h += '<section class="panel"><h3>Out, on IR or left early <span class="hint">Week ' + meta.next_week + '</span></h3>' + note("Starters ruled out or who left early, and who's next up.", "Out, Doubtful, injured reserve or a reserve list (Sleeper and the injury report), or under 40% of their usual snaps in Week " + WK + ". Next up = healthy teammates at the same position, by depth chart then recent snaps.");
     var foG = groupFallout(fo.out), shownN = 0;
     foG.slice(0, 12).forEach(function (g) { shownN += g.down.length; });
     h += fo.out.length ? '<ul class="folist">' + foG.slice(0, 12).map(falloutHtml).join("") + "</ul>" + (fo.out.length > shownN ? '<p class="note">' + (fo.out.length - shownN) + " more lower-scoring players not shown.</p>" : "") : '<p class="muted">No starters flagged' + (pos ? " at " + pos : "") + ".</p>";
     h += "</section>";
     if (tc.length) {
-      h += '<section class="panel"><h3>Changed teams</h3><p class="note">Regular contributors whose roster team changed during the ' + CUR + " season (trades and signings).</p><ol class=\"rank\">";
+      h += '<section class="panel"><h3>Changed teams</h3>' + note("Trades and signings during the " + CUR + " season.") + '<ol class="rank">';
       tc.forEach(function (x) {
         h += playerRow(x.p, (x.from ? esc(x.from) : "?") + " → <b>" + esc(x.to || "released") + "</b>" + ownBadge(x.p) + '<br><span class="sub">' + (x.base.pts != null ? f1(x.base.pts) + " pts / game recently" : "") + (x.dco ? " · " + x.p.pos + x.dco + " on new depth chart" : "") + "</span>");
       });
       h += "</ol></section>";
     }
     if (fo.risk.length) {
-      h += '<section class="panel"><h3>Questionable starters</h3><p class="note">Starters listed Questionable, who missed practice, or named in an injury headline. Worth a backup plan.</p><ol class="rank">';
+      h += '<section class="panel"><h3>Questionable starters</h3>' + note("Questionable, missed practice, or in an injury headline.", "Worth lining up a backup plan.") + '<ol class="rank">';
       fo.risk.slice(0, 10).forEach(function (f) { h += playerRow(f.p, esc(f.av.label.replace(/^Injury headline: /, "Headline: ").slice(0, 90)) + ownBadge(f.p) + '<br><span class="sub">' + f1(f.avgPts) + " pts / game" + (f.next[0] ? " · next up: " + esc(f.next[0].p.name) : "") + "</span>"); });
       h += "</ol></section>";
     }
@@ -941,7 +1094,9 @@
     h += riserList("Scoring up", esc(fmtLabel()) + " points per game, " + (k === 1 ? "last game vs. average before." : "last 3 games vs. earlier games."), r.production, function (x) { return "<b>" + f1(x.fpRecent) + "</b> <i>(" + sgn(x.dFp) + " vs " + f1(x.fpPrior) + ")</i>"; });
     h += riserList("Cooling off", "Biggest drop in " + esc(fmtLabel()) + " points per game, same comparison.", r.fallers, function (x) { return "<b>" + f1(x.fpRecent) + "</b> <i>(" + sgn(x.dFp) + " vs " + f1(x.fpPrior) + ")</i>"; });
     h += riserList("Most points per carry or target", "Season " + esc(fmtLabel()) + " points for each carry or target, minimum 40 carries + targets.", eff, function (x) { return "<b>" + x.ppo.toFixed(2) + "</b> on " + f0(x.opp) + " carries + targets"; });
-    $("view").innerHTML = h + "</div>";
+    h += "</div>";
+    if (!pos) h += '<div class="grid2">' + specialTrendHtml("K", k, "Kickers trending up", 5, false) + specialTrendHtml("DST", k, "D/ST trending up", 5, false) + "</div>";
+    $("view").innerHTML = h;
   }
 
   /* ---------- adds and drops (Sleeper) and waiver headlines (RSS) ---------- */
@@ -982,7 +1137,7 @@
     var sl = core.hasSleeper(), bz = core.hasBuzz();
     var h = '<div class="stickybar"><h3>Adds and drops</h3><div class="controls">' +
       seg("win", [[24, "Last 24 hours"], [168, "Last 7 days"]], win, "Time window") +
-      seg("apos", ["ALL", "QB", "RB", "WR", "TE"].map(function (x) { return [x, x === "ALL" ? "All" : x]; }), state.apos, "Position") + "</div></div>";
+      seg("apos", ["ALL", "QB", "RB", "WR", "TE", "K", "DST"].map(function (x) { return [x, x === "ALL" ? "All" : x === "DST" ? "D/ST" : x]; }), state.apos, "Position") + "</div></div>";
     if (!sl && !bz) {
       h += '<section class="panel"><p class="muted">This build has no Sleeper or headline data. On your computer, run <code>python3 src/refresh.py</code>. It fetches Sleeper\'s trending adds and drops plus waiver headlines from the RSS feeds in <code>feeds.json</code>, then rebuilds this page.</p></section>';
       $("view").innerHTML = h; return;
@@ -993,13 +1148,15 @@
       var when = DATA.buzz.fetched ? new Date(DATA.buzz.fetched).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "unknown";
       var arts = core.waiverArticles(null, 0).slice().sort(function (a, b) { return (b.d || "").localeCompare(a.d || ""); }).slice(0, 15);
       h += '<section class="panel"><h3>Waiver wire articles <span class="hint">last 14 days · as of ' + esc(when) + "</span></h3>";
-      h += '<p class="note">Pickup columns from ' + okN + " of " + feeds.length + " news feeds" + (bad.length ? " (not working: " + esc(bad.join("; ")) + ")" : "") + ", newest first. Headlines open the original article; names open the player page.</p>";
+      h += note("Newest first. Headlines open the article; names open the player.", "Pickup columns from " + okN + " of " + feeds.length + " news feeds" + (bad.length ? " (not working: " + bad.join("; ") + ")" : "") + ".");
       h += arts.length ? '<ul class="headlines warts">' + arts.map(waiverArticleHtml).join("") + "</ul>" : '<p class="muted pad">No waiver articles in your feeds right now. Most waiver columns come out Monday and Tuesday.</p>';
       h += "</section>";
     }
-    if (A.hasOwn()) {
+    if (A.hasOwn() && (pos === "K" || pos === "DST")) h += streamersHtml(pos, 8);
+    else if (A.hasOwn() && !pos) h += '<div class="grid2">' + streamersHtml("K", 5) + streamersHtml("DST", 5) + "</div>";
+    if (A.hasOwn() && pos !== "K" && pos !== "DST") {
       var gems = A.hiddenGems(state.fmt, pos, 8, 40);
-      h += '<section class="panel"><h3>Good game, low ownership</h3><p class="note">Active players rostered in 40% or fewer ESPN leagues, ranked by ' + esc(fmtLabel()) + " points per game over their last 3 games (at least 20% of snaps). These are the quiet producers the add counts may not have caught yet.</p><ol class=\"rank\">";
+      h += '<section class="panel"><h3>Good game, low ownership</h3>' + note("Rostered in 40% or fewer ESPN leagues, best PPG over the last 3 games.", "Active players with at least 20% of snaps, ranked by " + fmtLabel() + " points per game. Quiet producers the add counts may not have caught yet.") + '<ol class="rank">';
       h += gems.map(function (g) {
         return playerRow(g.p, "<b>" + f1(g.l3) + "</b> PPG last 3" + ownBadge(g.p) + '<br><span class="sub">' + (g.lastPts != null ? f1(g.lastPts) + " pts in Week " + WK + " · " : "") + pc(g.snap) + " of snaps" + (g.why.length ? " · " + esc(g.why.join("; ")) : "") + (addsTxt(g.p) ? " · " + esc(addsTxt(g.p)) : "") + "</span>");
       }).join("") || '<li class="muted pad">Nobody fits right now.</li>';
@@ -1010,11 +1167,11 @@
       $("view").innerHTML = h; return;
     }
     var fetched = DATA.sleeper.fetched ? new Date(DATA.sleeper.fetched).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "unknown";
-    h += '<section class="panel"><p class="note">Sleeper numbers: the number of Sleeper leagues that added or dropped each player in the ' + winText + ", as of " + esc(fetched) + ". These are counts, not roster percentages. Points and workload changes come from the " + CUR + " season data (workload = carries + targets per game; QBs: pass attempts + carries).</p></section>";
+    var slInfo = "Number of Sleeper leagues that added or dropped each player in the " + winText + ", as of " + fetched + ". Counts, not roster percentages. Workload = carries + targets per game (QBs: pass attempts + carries).";
     var top = core.slList("add", win, pos, 5, state.fmt);
-    h += '<section class="panel"><h3>Top 5 adds' + (pos ? " at " + pos : "") + '</h3><p class="note">Most added players in the ' + winText + ". Check the points and workload trend beside each name before you spend a waiver claim.</p><ol class=\"rank\">" + (top.map(function (x) { return slRow(x, "add"); }).join("") || '<li class="muted pad">No data for this window.</li>') + "</ol></section>";
-    var positions = pos ? [pos] : ["QB", "RB", "WR", "TE"];
-    var names = { QB: "Quarterbacks", RB: "Running backs", WR: "Wide receivers", TE: "Tight ends" };
+    h += '<section class="panel"><h3>Top 5 adds' + (pos ? " at " + pos : "") + '</h3>' + note("Most added on Sleeper, " + winText + ".", slInfo) + '<ol class="rank">' + (top.map(function (x) { return slRow(x, "add"); }).join("") || '<li class="muted pad">No data for this window.</li>') + "</ol></section>";
+    var positions = pos ? [pos] : ["QB", "RB", "WR", "TE", "K", "DST"];
+    var names = { QB: "Quarterbacks", RB: "Running backs", WR: "Wide receivers", TE: "Tight ends", K: "Kickers", DST: "Defenses (D/ST)" };
     positions.forEach(function (ps) {
       var adds = core.slList("add", win, ps, 5, state.fmt), drops = core.slList("drop", win, ps, 5, state.fmt);
       h += '<section class="panel"><h3>' + names[ps] + '</h3><div class="grid2"><div><h4 class="subhead first">Most added</h4><ol class="rank">' + (adds.map(function (x) { return slRow(x, "add"); }).join("") || '<li class="muted pad">None in the data.</li>') + '</ol></div><div><h4 class="subhead first">Most dropped</h4><ol class="rank">' + (drops.map(function (x) { return slRow(x, "drop"); }).join("") || '<li class="muted pad">None in the data.</li>') + "</ol></div></div></section>";
@@ -1081,7 +1238,7 @@
     q.addEventListener("input", function () {
       var r = core.search(q.value, 8);
       res.hidden = !r.length;
-      res.innerHTML = r.map(function (p) { return '<li><button data-open="' + esc(p.id) + '">' + avatar(p, "sm") + esc(p.name) + ' <span class="sub">' + p.pos + " · " + p.team + "</span></button></li>"; }).join("");
+      res.innerHTML = r.map(function (p) { return '<li><button data-open="' + esc(p.id) + '">' + avatar(p, "sm") + esc(p.name) + ' <span class="sub">' + posTxt(p.pos) + " · " + p.team + "</span></button></li>"; }).join("");
     });
     q.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { var r = core.search(q.value, 1); if (r.length) { q.value = ""; res.hidden = true; openPlayer(r[0].id); } }

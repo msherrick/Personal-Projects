@@ -62,11 +62,14 @@ nflverse supplies standard and PPR points. Half PPR = (standard + PPR) / 2. Stan
   with his numbers in past games without them; his team's depth chart at his position (Sleeper); this week's DraftKings lines with how often he went over each one in his last 5 and 10 games and this season; Overview (charts, or a table-only box score) and Splits & stat lookup
   (type questions like "home games vs KC in primetime" or "without Henderson").
 - Compare: Fantasy view (points, consistency, opportunity) or Stats view (box-score totals and rates) over this season, the last N games, or since any earlier season loaded. Enter adds a player.
-- Matchups: four tables, defense stats vs QB / RB / WR / TE, ranked 1-32 per column, green (easiest) to red (toughest). Click a column header to sort by it (1st to last, last to first, back to default).
+- Matchups: six tables, defense stats vs QB / RB / WR / TE / K and offenses vs D/ST, ranked 1-32 per column, green (easiest) to red (toughest). Click a column header to sort by it (1st to last, last to first, back to default).
 - Risers: new starters, players out or on IR with who is next up, players who changed teams, questionable starters,
-  then the usage and scoring lists.
-- Adds & drops: waiver buzz (click a name to open the article), "good game, low ownership", Sleeper adds and drops.
+  then the usage and scoring lists. K and D/ST: scoring up, cooling off and streaming picks.
+- Adds & drops: waiver wire articles, K and D/ST streaming picks, "good game, low ownership", Sleeper adds and drops for every position.
+- Kickers and team defenses have their own pages (stat strip, this week's matchup and Vegas total, game log). They use
+  Sleeper's default scoring in every format: FG 0-39 = 3, 40-49 = 4, 50+ = 5, PAT = 1, misses -1; D/ST sack 1,
+  INT / fumble recovery / safety / block 2, TD 6, plus points-allowed tiers (0 = 10 down to 35+ = -4).
 
 ## Not included yet
-Prop lines, RotoWire/RotoBaller player blurbs (licensed text, no public feed), Reddit or social media, how long an
+RotoWire/RotoBaller player blurbs (licensed text, no public feed), Reddit or social media, how long an
 injured player is expected to be out, a per-player news watchlist.

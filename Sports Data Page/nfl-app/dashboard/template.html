@@ -123,6 +123,8 @@ main { display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
 .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .legend .sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .legend .sw.s0 { background: var(--accent); } .legend .sw.s1 { background: var(--series2); }
+.info { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 4px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--muted); font: italic 600 10px/1 Georgia, serif; vertical-align: 1px; cursor: help; }
+.info:hover, .info:focus-visible { color: var(--accent); border-color: var(--accent); }
 #tip { position: fixed; z-index: 60; pointer-events: none; background: var(--ink); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.4; max-width: 240px; }
 
 /* tables */
@@ -344,7 +346,7 @@ table.lines .mvdn { color: var(--down); margin-left: 4px; }
     <button class="brand" data-tab="home" aria-label="Gridiron Desk home">Gridiron <span>Desk</span></button>
     <div class="searchbox" id="searchbox">
       <label for="q" class="sr">Search players</label>
-      <input id="q" type="search" placeholder="Search a player (QB, RB, WR, TE)" autocomplete="off">
+      <input id="q" type="search" placeholder="Search a player or team D/ST" autocomplete="off">
       <ul id="results" class="results" hidden></ul>
     </div>
     <div class="barright">

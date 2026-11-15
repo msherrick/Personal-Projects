@@ -39,7 +39,7 @@ checks = {
     "sleeper exit 0": rc == 0,
     "trending saved": (tmp / "sleeper_trending.json").exists(),
     "players keep QB with depth/status": pl.get("4881", {}).get("depth_chart_order") == 1 and pl["8161"]["injury_status"] == "IR",
-    "kickers and inactive no-team players dropped": "1" not in pl and "2" not in pl,
+    "kickers kept, inactive no-team players dropped": "1" in pl and "2" not in pl,
     "player database cached (no second download)": len(calls) == n1,
 }
 es.RAW = tmp
@@ -48,7 +48,7 @@ rc2 = es.main()
 oe = json.loads((tmp / "espn_ownership.json").read_text())["players"]
 checks.update({
     "espn exit 0": rc2 == 0,
-    "espn keeps only QB/RB/WR/TE with ownership": list(oe) == ["4262921"] and oe["4262921"]["own"] == 97.5,
+    "espn keeps QB/RB/WR/TE/K/DST with ownership": sorted(oe) == ["4262921", "5"] and oe["4262921"]["own"] == 97.5 and oe["5"]["pos"] == "K",
     "espn sent the filter header": any(c.startswith("FILTER") and "sortPercOwned" in c for c in calls),
 })
 es.URL = base + "/espn-fail?x={season}"

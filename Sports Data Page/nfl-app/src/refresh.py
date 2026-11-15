@@ -29,6 +29,7 @@ def download_nflverse():
     for s in SEASONS:
         files[f"stats_player_week_{s}.csv"] = f"{BASE}/stats_player/stats_player_week_{s}.csv"
         files[f"snap_counts_{s}.csv"] = f"{BASE}/snap_counts/snap_counts_{s}.csv"
+        files[f"stats_team_week_{s}.csv"] = f"{BASE}/stats_team/stats_team_week_{s}.csv"   # D/ST scoring
     files[f"injuries_{CUR}.csv"] = f"{BASE}/injuries/injuries_{CUR}.csv"
     files[f"rosters_{CUR}.csv"] = f"{BASE}/rosters/roster_{CUR}.csv"
     for name, url in files.items():

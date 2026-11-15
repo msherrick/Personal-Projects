@@ -25,6 +25,72 @@ POS = ["QB", "RB", "WR", "TE"]
 ESPN_POS = {1: "QB", 2: "RB", 3: "WR", 4: "TE"}
 SLEEPER_TEAM = {"LAR": "LA", "WSH": "WAS", "ARZ": "ARI", "JAC": "JAX", "LVR": "LV", "SD": "LAC", "STL": "LA", "OAK": "LV"}
 
+# Kickers and team defenses keep their own game-log columns so the QB/RB/WR/TE rows stay small.
+K_COLS = ["season", "week", "opp", "fgm", "fga", "fg39", "fg40", "fg50", "xpm", "xpa", "lng", "fp", "fpp", "tm"]
+DST_COLS = ["season", "week", "opp", "sk", "dint", "fr", "dtd", "sttd", "sf", "blk", "pa", "yda", "fp", "fpp", "tm"]
+TEAM_NAME = {"ARI": "Cardinals", "ATL": "Falcons", "BAL": "Ravens", "BUF": "Bills", "CAR": "Panthers", "CHI": "Bears",
+             "CIN": "Bengals", "CLE": "Browns", "DAL": "Cowboys", "DEN": "Broncos", "DET": "Lions", "GB": "Packers",
+             "HOU": "Texans", "IND": "Colts", "JAX": "Jaguars", "KC": "Chiefs", "LA": "Rams", "LAC": "Chargers",
+             "LV": "Raiders", "MIA": "Dolphins", "MIN": "Vikings", "NE": "Patriots", "NO": "Saints", "NYG": "Giants",
+             "NYJ": "Jets", "PHI": "Eagles", "PIT": "Steelers", "SEA": "Seahawks", "SF": "49ers", "TB": "Buccaneers",
+             "TEN": "Titans", "WAS": "Commanders"}
+ESPN_LOGO = {"LA": "lar", "WAS": "wsh"}
+SLEEPER_DEF = {"LA": "LAR"}
+
+
+def kicker_points(r) -> float:
+    """Sleeper default kicker scoring: FG 0-39 = 3, 40-49 = 4, 50+ = 5, PAT = 1, missed FG or PAT = -1."""
+    def v(c):
+        x = getattr(r, c, 0)
+        return 0 if pd.isna(x) else float(x)
+    m39 = v("fg_made_0_19") + v("fg_made_20_29") + v("fg_made_30_39")
+    m40, m50 = v("fg_made_40_49"), v("fg_made_50_59") + v("fg_made_60_")
+    return 3 * m39 + 4 * m40 + 5 * m50 + v("pat_made") - (v("fg_att") - v("fg_made")) - (v("pat_att") - v("pat_made"))
+
+
+def pa_points(pa) -> int:
+    """Sleeper default D/ST points-allowed tiers."""
+    if pa == 0: return 10
+    if pa <= 6: return 7
+    if pa <= 13: return 4
+    if pa <= 20: return 1
+    if pa <= 27: return 0
+    if pa <= 34: return -1
+    return -4
+
+
+def load_team_stats() -> pd.DataFrame:
+    frames = [pd.read_csv(RAW / f"stats_team_week_{s}.csv", low_memory=False) for s in SEASONS
+              if (RAW / f"stats_team_week_{s}.csv").exists()]
+    if not frames:
+        return pd.DataFrame()
+    t = pd.concat(frames, ignore_index=True)
+    return t[t.season_type == "REG"].copy()
+
+
+def dst_games(tst: pd.DataFrame, allg: pd.DataFrame) -> pd.DataFrame:
+    """One row per team defense per game, with Sleeper default D/ST fantasy points.
+    Sack 1, INT 2, fumble recovery 2, defensive or return TD 6, safety 2, blocked FG/punt 2, plus points-allowed tiers."""
+    if tst.empty:
+        return pd.DataFrame()
+    t = tst.copy()
+    for c in ["def_sacks", "def_interceptions", "fumble_recovery_opp", "def_tds", "special_teams_tds", "def_safeties",
+              "def_fg_blocks", "def_punt_blocks", "passing_yards", "rushing_yards"]:
+        t[c] = t[c].fillna(0) if c in t else 0
+    opp = t[["season", "week", "team", "passing_yards", "rushing_yards"]].rename(columns={"team": "opponent_team"})
+    opp["yda"] = opp.passing_yards + opp.rushing_yards
+    t = t.merge(opp[["season", "week", "opponent_team", "yda"]], on=["season", "week", "opponent_team"], how="left")
+    reg = allg[allg.game_type == "REG"]
+    sc = pd.concat([reg[["season", "week", "home_team", "away_score"]].rename(columns={"home_team": "team", "away_score": "pa"}),
+                    reg[["season", "week", "away_team", "home_score"]].rename(columns={"away_team": "team", "home_score": "pa"})])
+    t = t.merge(sc, on=["season", "week", "team"], how="left")
+    t = t[t.pa.notna()].copy()
+    t["blk"] = t.def_fg_blocks + t.def_punt_blocks
+    t["fp"] = (t.def_sacks + 2 * t.def_interceptions + 2 * t.fumble_recovery_opp + 6 * (t.def_tds + t.special_teams_tds)
+               + 2 * t.def_safeties + 2 * t.blk + t.pa.map(lambda x: pa_points(int(x))))
+    return t.sort_values(["season", "week"])
+
+
 LOG_COLS = [
     "season", "week", "opp", "snap", "cmp", "att", "pyd", "ptd", "int",
     "ra", "ryd", "rtd", "tgt", "rec", "recyd", "rectd", "fl", "two",
@@ -247,8 +313,8 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
     sn = load_snaps()
     st["nm"] = st.player_display_name.map(norm_name)
     st = st.merge(sn, on=["season", "week", "team", "nm"], how="left")
-    off = st[st.position.isin(POS)]
-    cur_off = off[(off.season == CUR) & ((off.targets.fillna(0) + off.carries.fillna(0) + off.attempts.fillna(0)) > 0)]
+    off = st[st.position.isin(POS + ["K"])]
+    cur_off = off[off.position.isin(POS) & (off.season == CUR) & ((off.targets.fillna(0) + off.carries.fillna(0) + off.attempts.fillna(0)) > 0)]
     miss = cur_off.offense_pct.isna().mean()
     print(f"[snap join] {CUR} offensive rows without snap match: {miss:.1%}", file=sys.stderr)
 
@@ -274,7 +340,7 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
         j = json.loads(epp.read_text())
         esp, esp_fetched = j.get("players", {}), j.get("fetched")
         for k, v in esp.items():
-            if v.get("pos") in ESPN_POS.values():
+            if v.get("pos") in list(ESPN_POS.values()) + ["K"]:
                 esp_by_name.setdefault((norm_name(v.get("name", "")), v["pos"]), v)
         print(f"[espn] ownership for {len(esp)} players", file=sys.stderr)
 
@@ -294,7 +360,7 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
     pool_ids = set(off[off.season == CUR].player_id)
     grouped = {pid: grp.sort_values(["season", "week"]) for pid, grp in off[off.player_id.isin(pool_ids)].groupby("player_id")}
     roster_only = [gid for gid, r in ros.iterrows()
-                   if gid not in grouped and r.get("position") in POS and r.get("status") in ("ACT", "RES")]
+                   if gid not in grouped and r.get("position") in POS + ["K"] and r.get("status") in ("ACT", "RES")]
     entries = [(pid, grp) for pid, grp in grouped.items()] + [(gid, None) for gid in roster_only]
 
     players = []
@@ -309,7 +375,17 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
         espn_id = (str(int(rr.espn_id)) if rr is not None and not pd.isna(rr.espn_id) else None)
 
         rows = []
-        if grp is not None:
+        if grp is not None and pos == "K":
+            for r in grp.itertuples():
+                rows.append([
+                    int(r.season), int(r.week), r.opponent_team,
+                    n(r.fg_made, 0), n(r.fg_att, 0),
+                    n(sum(0 if pd.isna(getattr(r, c)) else getattr(r, c) for c in ("fg_made_0_19", "fg_made_20_29", "fg_made_30_39")), 0),
+                    n(r.fg_made_40_49, 0), n((0 if pd.isna(r.fg_made_50_59) else r.fg_made_50_59) + (0 if pd.isna(r.fg_made_60_) else r.fg_made_60_), 0),
+                    n(r.pat_made, 0), n(r.pat_att, 0), n(r.fg_long, 0),
+                    round(kicker_points(r), 2), round(kicker_points(r), 2), r.team,
+                ])
+        elif grp is not None:
             for r in grp.itertuples():
                 rows.append([
                     int(r.season), int(r.week), r.opponent_team,
@@ -373,6 +449,63 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
             "next": next_games.get(team),
             "log": rows,
         })
+    # ---- team defenses (D/ST) as their own "players" ----
+    dst = dst_games(load_team_stats(), allg)
+    esp_dst = {v.get("name"): k for k, v in esp.items() if v.get("pos") == "DST"}
+    for team in teams:
+        g = dst[dst.team == team] if not dst.empty else dst
+        rows = [[int(r.season), int(r.week), r.opponent_team, int(r.def_sacks), int(r.def_interceptions), int(r.fumble_recovery_opp),
+                 int(r.def_tds), int(r.special_teams_tds), int(r.def_safeties), int(r.blk), int(r.pa),
+                 None if pd.isna(r.yda) else int(r.yda), float(r.fp), float(r.fp), team] for r in g.itertuples()]
+        name = TEAM_NAME.get(team, team) + " D/ST"
+        own = None
+        eid = esp_dst.get(name)
+        if eid is not None:
+            e = esp[eid]
+            own = {"p": e.get("own"), "s": e.get("start"), "c": e.get("chg")}
+        players.append({
+            "id": "DST-" + team, "name": name, "pos": "DST", "team": team, "prev": None,
+            "head": f"https://a.espncdn.com/i/teamlogos/nfl/500/{ESPN_LOGO.get(team, team.lower())}.png",
+            "sleeper": SLEEPER_DEF.get(team, team), "espn": eid, "rstatus": "ACT", "inj": None, "sl": None,
+            "own": own, "props": None, "next": next_games.get(team), "log": rows,
+        })
+
+    # ---- matchups for K and D/ST (current season) ----
+    def team_allow(df, key_team, cols, fp_col="fp"):
+        """Per-game averages of `cols` grouped by `key_team`, plus fantasy points and last-4 points."""
+        out = {}
+        if df.empty:
+            return out
+        g = df.groupby([key_team, "week"])[[fp_col] + cols].sum().reset_index()
+        avg = g.groupby(key_team).mean(numeric_only=True)
+        l4 = g[g.week > max_week - 4].groupby(key_team)[fp_col].mean()
+        rk = avg[fp_col].rank(ascending=False, method="min")
+        for t in avg.index:
+            fpv = round(float(avg.loc[t, fp_col]), 2)
+            l4v = round(float(l4[t]), 2) if t in l4.index else None
+            o = {"n": int(g[g[key_team] == t].week.nunique()), "fp": [fpv, fpv, fpv], "l4": None if l4v is None else [l4v, l4v, l4v],
+                 "rk": [int(rk[t])] * 3}
+            for c in cols:
+                o[c] = round(float(avg.loc[t, c]), 2)
+            out[t] = o
+        return out
+
+    kc = st[(st.season == CUR) & (st.position == "K")].copy()
+    if not kc.empty:
+        kc["kfp"] = [kicker_points(r) for r in kc.itertuples()]
+        for c in ("fg_made", "fg_att", "pat_made"):
+            kc[c] = kc[c].fillna(0)
+        kc = kc.rename(columns={"fg_made": "fgm", "fg_att": "fga", "pat_made": "xpm"})
+        for t, o in team_allow(kc, "opponent_team", ["fgm", "fga", "xpm"], "kfp").items():
+            dvp.setdefault(t, {})["K"] = o
+    if not dst.empty:
+        dc = dst[dst.season == CUR].copy()
+        dc["to"] = dc.def_interceptions + dc.fumble_recovery_opp
+        dc = dc.rename(columns={"def_sacks": "sk", "pa": "pts"})
+        # Keyed by the OFFENSE (opponent_team): what defenses score against that offense.
+        for t, o in team_allow(dc, "opponent_team", ["pts", "sk", "to"]).items():
+            dvp.setdefault(t, {})["DST"] = o
+
     players.sort(key=lambda p: p["name"])
 
     # ---- Sleeper trending adds/drops (optional; written by fetch_sleeper.py) ----
@@ -392,7 +525,7 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
                 matched += 1
                 windows.setdefault(hrs, {}).setdefault(kind, {})[gid] = int(item.get("count", 0))
         sleeper = {"fetched": raw.get("fetched"), "windows": windows}
-        print(f"[sleeper] matched {matched} of {total} trending entries to QB/RB/WR/TE in the data", file=sys.stderr)
+        print(f"[sleeper] matched {matched} of {total} trending entries to players and defenses in the data", file=sys.stderr)
 
     # ---- headlines from RSS feeds (optional; written by fetch_news.py) ----
     buzz = None
@@ -411,6 +544,8 @@ def main(out_path=None, sleeper_path=None, news_path=None, sleeper_players_path=
             "next_week": next_week,
             "injury_report_week": inj_week,
             "log_cols": LOG_COLS,
+            "log_cols_k": K_COLS,
+            "log_cols_dst": DST_COLS,
             "weeks_played": weeks_played,
             "sleeper_players_fetched": slp_fetched,
             "ownership_fetched": esp_fetched,

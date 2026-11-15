@@ -30,7 +30,7 @@ TREND = BASE + "/trending"
 WINDOWS = [24, 168]            # hours: last day, last 7 days
 KINDS = ["add", "drop"]
 LIMITS = [200, 100, 50]         # tried in order if the API rejects a large limit
-POS = {"QB", "RB", "WR", "TE"}
+POS = {"QB", "RB", "WR", "TE", "K", "DEF"}
 PLAYER_CACHE_HOURS = 10
 MAX_BYTES = 60_000_000
 
@@ -100,7 +100,7 @@ def fetch_players(force=False) -> bool:
         keep[str(pid)] = {k: p.get(k) for k in ("team", "status", "injury_status", "injury_body_part", "injury_notes",
                                                   "depth_chart_order", "depth_chart_position", "position")}
     path.write_text(json.dumps({"fetched": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "players": keep}))
-    print(f"[sleeper] player database: {len(keep)} QB/RB/WR/TE saved")
+    print(f"[sleeper] player database: {len(keep)} QB/RB/WR/TE/K/DEF saved")
     return True
 
 

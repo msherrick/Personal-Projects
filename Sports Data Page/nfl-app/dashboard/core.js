@@ -21,10 +21,13 @@
 
   function create(data) {
     var meta = data.meta, CUR = meta.season, W = meta.last_week_played;
-    var idx = {};
-    meta.log_cols.forEach(function (c, i) { idx[c] = i; });
+    // Kickers and team defenses (D/ST) have their own game-log columns.
+    function colIdx(cols) { var m = {}; (cols || []).forEach(function (c, i) { m[c] = i; }); return m; }
+    var IDX = { def: colIdx(meta.log_cols), K: colIdx(meta.log_cols_k), DST: colIdx(meta.log_cols_dst) };
+    var OFF = { QB: 1, RB: 1, WR: 1, TE: 1 };
 
     data.players.forEach(function (p) {
+      var idx = IDX[p.pos] || IDX.def;
       p.rows = p.log.map(function (r) {
         var o = {};
         for (var k in idx) o[k] = r[idx[k]];
@@ -72,6 +75,7 @@
       for (var w = 1; w <= maxW; w++) {
         var r = byWeek[w];
         if (r) { out.push({ week: w, kind: "played", row: r, opp: r.opp, team: r.tm }); continue; }
+        if (season === CUR && w === W && weekStatus.partial) continue;   // week still in progress: his game may not be played yet
         var team = p.team, best = 99;
         rows.forEach(function (x) { var d = Math.abs(x.week - w); if (d < best) { best = d; team = x.tm || team; } });
         var opp = sched[team] ? sched[team][w - 1] : null;
@@ -335,7 +339,7 @@
     function risers(fmt, pos, n, basis) {
       var k = basis === "last1" ? 1 : 3, list = [];
       data.players.forEach(function (p) {
-        if (pos && p.pos !== pos) return;
+        if (pos ? p.pos !== pos : !OFF[p.pos]) return;   // no position = QB/RB/WR/TE
         var r = riserRow(p, fmt, k);
         if (!r) return;
         var minOpp = p.pos === "QB" ? (k === 1 ? 15 : 20) : (k === 1 ? 5 : 4);
@@ -352,7 +356,7 @@
     function efficiency(fmt, pos, n, minOpp) {
       var list = [];
       data.players.forEach(function (p) {
-        if (pos && p.pos !== pos) return;
+        if (pos ? p.pos !== pos : !OFF[p.pos]) return;   // no position = QB/RB/WR/TE
         if (p.pos === "QB") return;
         var rows = seasonRows(p);
         var tot = sum(rows.map(function (r) { return opps(r, p.pos); }));
@@ -364,7 +368,7 @@
     function topScorers(fmt, pos, n, week) {
       var list = [], wk = week || FULLW;
       data.players.forEach(function (p) {
-        if (pos && p.pos !== pos) return;
+        if (pos ? p.pos !== pos : !OFF[p.pos]) return;   // no position = QB/RB/WR/TE
         var r = seasonRows(p).filter(function (x) { return x.week === wk; })[0];
         if (r) list.push({ p: p, row: r, pts: fp(r, fmt) });
       });
@@ -375,7 +379,7 @@
     function fallout(fmt, pos) {
       var found = [], ids = {};
       data.players.forEach(function (p) {
-        if (pos && p.pos !== pos) return;
+        if (pos ? p.pos !== pos : !OFF[p.pos]) return;   // no position = QB/RB/WR/TE
         var rows = seasonRows(p);
         if (rows.length < 2 && !(rows.length === 1 && rows[0].week < W)) return;
         var lastRow = rows[rows.length - 1];
@@ -425,7 +429,8 @@
       var prior = rows.slice(0, Math.max(0, rows.length - 3));
       var o3 = avg(last(rows, 3).map(function (r) { return opps(r, p.pos); }));
       var oP = prior.length ? avg(prior.map(function (r) { return opps(r, p.pos); })) : null;
-      return { l3: avg(last(pts, 3)), season: avg(pts), opp3: o3, dOpp: oP == null ? null : o3 - oP, games: rows.length };
+      var noWork = !OFF[p.pos];   // kickers and defenses have no carries or targets
+      return { l3: avg(last(pts, 3)), season: avg(pts), opp3: noWork ? null : o3, dOpp: noWork || oP == null ? null : o3 - oP, games: rows.length };
     }
     function slList(kind, win, pos, n, fmt) {
       var w = SL && SL.windows[String(win)];
@@ -451,7 +456,7 @@
     function buzzList(pos, n, fmt) {
       var list = [];
       data.players.forEach(function (p) {
-        if (pos && p.pos !== pos) return;
+        if (pos ? p.pos !== pos : !OFF[p.pos]) return;   // no position = QB/RB/WR/TE
         var w = waiverMentions(p);
         if (w > 0) list.push({ p: p, waiver: w, total: (buzzBy[p.id] || []).length, m: recentMetrics(p, fmt || "ppr") });
       });
@@ -490,7 +495,7 @@
     }
 
     return {
-      data: data, byId: byId, FORMATS: FORMATS, YARD_LABEL: YARD_LABEL, weekStatus: weekStatus, FULLW: FULLW,
+      data: data, byId: byId, OFF: OFF, FORMATS: FORMATS, YARD_LABEL: YARD_LABEL, weekStatus: weekStatus, FULLW: FULLW,
       sample: sample, sinceRows: sinceRows, statLine: statLine, fp: fp, seasonRows: seasonRows, weekLog: weekLog, matchup: matchup, trendGroups: trendGroups, chips: chips,
       summary: summary, headToHead: headToHead, risers: risers, efficiency: efficiency, topScorers: topScorers,
       fallout: fallout, dvpTable: dvpTable, hasSleeper: hasSleeper, hasBuzz: hasBuzz, playerNews: playerNews, waiverMentions: waiverMentions, buzzList: buzzList, waiverArticles: waiverArticles, buzzPlayers: buzzPlayers, slCount: slCount, slList: slList, recentMetrics: recentMetrics, search: search, avg: avg, r1: r1, pct: pct, ordinal: ordinal,

@@ -18,14 +18,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "raw"
 SEASON = 2026
-POS = {1: "QB", 2: "RB", 3: "WR", 4: "TE"}
+POS = {1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST"}
 URL = ("https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/{season}/segments/0/leaguedefaults/3?"
        + urllib.parse.urlencode({"view": "kona_player_info"}))
 FILTER = {"players": {"limit": 1500, "sortPercOwned": {"sortPriority": 1, "sortAsc": False}}}
 
 
 def parse(data: dict) -> dict:
-    """Return {espn_id: {own, start, chg, name, pos}} for QB/RB/WR/TE."""
+    """Return {espn_id: {own, start, chg, name, pos, team}} for QB/RB/WR/TE/K/DST (D/ST ids are negative)."""
     out = {}
     for entry in data.get("players", []):
         pl = entry.get("player") or {}
@@ -39,7 +39,7 @@ def parse(data: dict) -> dict:
         out[str(pid)] = {"own": round(float(own["percentOwned"]), 1),
                          "start": None if own.get("percentStarted") is None else round(float(own["percentStarted"]), 1),
                          "chg": None if own.get("percentChange") is None else round(float(own["percentChange"]), 2),
-                         "name": pl.get("fullName", ""), "pos": pos}
+                         "name": pl.get("fullName", ""), "pos": pos, "team": pl.get("proTeamId")}
     return out
 
 
@@ -62,7 +62,7 @@ def main(out_path=None) -> int:
         return 1
     out_path.write_text(json.dumps({"fetched": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
                                     "season": SEASON, "players": players}))
-    print(f"[espn] percent owned for {len(players)} QB/RB/WR/TE")
+    print(f"[espn] percent owned for {len(players)} QB/RB/WR/TE/K/DST")
     return 0
 
 

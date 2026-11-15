@@ -305,7 +305,7 @@
       var list = [], fo = fallout(fmt, pos), nextFor = {};
       fo.out.forEach(function (e) { e.next.forEach(function (x) { (nextFor[x.p.id] = nextFor[x.p.id] || []).push(e.p.name); }); });
       data.players.forEach(function (p) {
-        if (pos && p.pos !== pos) return;
+        if (pos ? p.pos !== pos : !core.OFF[p.pos]) return;
         var o = own(p);
         if (o == null || o > (maxOwn == null ? 40 : maxOwn) || p.rstatus !== "ACT") return;
         var rows = core.seasonRows(p, CUR);
@@ -358,16 +358,23 @@
     }
 
     /* ---------- defense vs position tables ---------- */
+    /* Extra columns per position, with direction: 1 = more is a better matchup, -1 = less is better.
+       K and D/ST tables: kickers are ranked by what each DEFENSE allows; D/ST by what each OFFENSE gives up. */
+    var DVP_KEYS = { QB: [["yd", 1], ["td", 1], ["tdt", 1]], K: [["fgm", 1], ["fga", 1], ["xpm", 1]], DST: [["pts", -1], ["sk", 1], ["to", 1]] };
     function dvpTables(fmt) {
       var i = { std: 0, half: 1, ppr: 2 }[fmt || "ppr"], out = {};
-      ["QB", "RB", "WR", "TE"].forEach(function (pos) {
-        var rows = [];
+      ["QB", "RB", "WR", "TE", "K", "DST"].forEach(function (pos) {
+        var extra = DVP_KEYS[pos] || DVP_KEYS.QB, rows = [];
         for (var team in data.dvp) {
           var d = data.dvp[team][pos];
-          if (d) rows.push({ team: team, n: d.n, fp: d.fp[i], l4: d.l4 ? d.l4[i] : null, yd: d.yd, td: d.td, tdt: d.tdt });
+          if (!d) continue;
+          var r = { team: team, n: d.n, fp: d.fp[i], l4: d.l4 ? d.l4[i] : null };
+          extra.forEach(function (k) { r[k[0]] = d[k[0]]; });
+          rows.push(r);
         }
-        ["fp", "yd", "td", "tdt", "l4"].forEach(function (key) {
-          function val(r) { return r[key] == null ? -Infinity : r[key]; }   // missing last-4 data ranks last
+        [["fp", 1], ["l4", 1]].concat(extra).forEach(function (k) {
+          var key = k[0], dir = k[1];
+          function val(r) { return r[key] == null ? -Infinity : dir * r[key]; }   // missing data ranks last
           var s = rows.slice().sort(function (a, b) { return val(b) - val(a); }), rk = 0, prev = null;
           s.forEach(function (r, j) { if (prev === null || val(r) !== prev) rk = j + 1; prev = val(r); r["r_" + key] = rk; });
         });
